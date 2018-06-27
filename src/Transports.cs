@@ -32,7 +32,7 @@ namespace QWebChannel
         #pragma warning restore 67
     }
 
-    public class WebChannelTcpSocketTransport : IWebChannelTransport
+    public class WebChannelTcpSocketTransport : IWebChannelTransport, IDisposable
     {
         TcpClient sock;
         Semaphore writeLock = new Semaphore(1, 1);
@@ -51,6 +51,21 @@ namespace QWebChannel
         public WebChannelTcpSocketTransport(string host, int port, Action<WebChannelTcpSocketTransport> connectedCallback) {
             sock = new TcpClient();
             sock.BeginConnect(host, port, new AsyncCallback(ClientConnected), connectedCallback);
+        }
+
+        public void Dispose()
+        {
+            Disconnect();
+            if (sock != null) {
+                ((IDisposable) sock).Dispose();
+            }
+        }
+
+        public void Disconnect()
+        {
+             if (sock != null && sock.Client != null) {
+                sock.Client.Disconnect(false);
+             }
         }
 
         void ClientConnected(IAsyncResult ar)
