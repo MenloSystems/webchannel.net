@@ -44,6 +44,7 @@ namespace QWebChannel
 
         public event Action<object, byte[]> OnMessage;
         public event EventHandler OnDisconnected;
+        public event EventHandler<UnhandledExceptionEventArgs> OnError;
 
         public bool Connected { get { return connected; } }
         public TcpClient Client { get { return sock; } }
@@ -71,7 +72,16 @@ namespace QWebChannel
         void ClientConnected(IAsyncResult ar)
         {
             var callback = (Action<WebChannelTcpSocketTransport>) ar.AsyncState;
-            sock.EndConnect(ar);
+            try {
+                sock.EndConnect(ar);
+            } catch (Exception e) {
+                Console.Error.WriteLine("An error occured while attempting to connect!");
+                if (OnError != null) {
+                    var args = new UnhandledExceptionEventArgs(e, false);
+                    OnError(this, args);
+                }
+                return;
+            }
 
             sock.GetStream().BeginRead(receiveBuffer, 0, receiveBuffer.Length, new AsyncCallback(DataAvailable), null);
 
@@ -117,7 +127,17 @@ namespace QWebChannel
         {
             var stream = sock.GetStream();
 
-            int bytesRead = stream.EndRead(ar);
+            int bytesRead = 0;
+            try {
+                bytesRead = stream.EndRead(ar);
+            } catch (Exception e) {
+                Console.Error.WriteLine("An error occured while trying to receive data!");
+                if (OnError != null) {
+                    var args = new UnhandledExceptionEventArgs(e, false);
+                    OnError(this, args);
+                }
+            }
+
 
             if (!IsSocketConnected(sock.Client)) {
                 if (connected) {
