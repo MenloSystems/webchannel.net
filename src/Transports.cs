@@ -114,7 +114,15 @@ namespace QWebChannel
         void DataWritten(IAsyncResult ar)
         {
             var stream = (NetworkStream) ar.AsyncState;
-            stream.EndWrite(ar);
+            try {
+                stream.EndWrite(ar);
+            } catch (Exception e) {
+                Console.Error.WriteLine("An error occured while trying to write data!");
+                if (OnError != null) {
+                    var args = new UnhandledExceptionEventArgs(e, false);
+                    OnError(this, args);
+                }
+            }
             writeLock.Release();
         }
 
@@ -125,10 +133,11 @@ namespace QWebChannel
 
         void DataAvailable(IAsyncResult ar)
         {
-            var stream = sock.GetStream();
-
+            NetworkStream stream = null;
             int bytesRead = 0;
+
             try {
+                stream = sock.GetStream();
                 bytesRead = stream.EndRead(ar);
             } catch (Exception e) {
                 Console.Error.WriteLine("An error occured while trying to receive data!");
@@ -138,8 +147,7 @@ namespace QWebChannel
                 }
             }
 
-
-            if (!IsSocketConnected(sock.Client)) {
+            if (!IsSocketConnected(sock.Client) || stream == null) {
                 if (connected) {
                     connected = false;
                     if (OnDisconnected != null) {
