@@ -51,6 +51,15 @@ namespace QWebChannel
 
         public WebChannelTcpSocketTransport(string host, int port, Action<WebChannelTcpSocketTransport> connectedCallback) {
             sock = new TcpClient();
+            Connect(host, port, connectedCallback);
+        }
+
+        public WebChannelTcpSocketTransport() {
+            sock = new TcpClient();
+        }
+
+        public void Connect(string host, int port, Action<WebChannelTcpSocketTransport> connectedCallback)
+        {
             sock.BeginConnect(host, port, new AsyncCallback(ClientConnected), connectedCallback);
         }
 
