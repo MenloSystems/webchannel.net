@@ -292,12 +292,10 @@ namespace QWebChannel
                 } else if (callMsg.MethodName.StartsWith("set_")) {
                     obj.SetMember(callMsg.MethodName.Substring(4), callMsg.InArgs[0]);
                 } else if (callMsg.MethodName.StartsWith("add_")) {
-                    retVal = obj.GetMember(callMsg.MethodName.Substring(4));
-                    Signal sig = (Signal) retVal;
+                    Signal sig = (Signal) obj.GetMember(callMsg.MethodName.Substring(4));
                     sig.connect((Delegate) callMsg.InArgs[0]);
                 } else if (callMsg.MethodName.StartsWith("remove_")) {
-                    retVal = obj.GetMember(callMsg.MethodName.Substring(7));
-                    Signal sig = (Signal) retVal;
+                    Signal sig = (Signal) obj.GetMember(callMsg.MethodName.Substring(4));;
                     sig.disconnect((Delegate) callMsg.InArgs[0]);
                 } else {
                     obj.Invoke(callMsg.MethodName, callMsg.InArgs);
@@ -539,8 +537,24 @@ namespace QWebChannel
 
             if (found) {
                 foreach (var del in connections) {
-                    del.DynamicInvoke(signalArgs.Take(del.Method.GetParameters().Length).ToArray());
+                    invokeSignalCallback(del, signalArgs.Take(del.Method.GetParameters().Length).ToArray());
                 }
+            }
+        }
+
+        static Type EventHandlerGenericType = typeof(EventHandler<EventArgs>).GetGenericTypeDefinition();
+
+        void invokeSignalCallback(Delegate del, object[] args)
+        {
+            var delType = del.GetType();
+            if (delType.IsGenericType && delType.GetGenericTypeDefinition() == EventHandlerGenericType) {
+                var eventArgsType = delType.GetGenericArguments()[0];
+                var eventArgs = Activator.CreateInstance(eventArgsType, args);
+                del.DynamicInvoke(this, eventArgs);
+            } else if (delType == typeof(EventHandler)) {
+                del.DynamicInvoke(this, new EventArgs());
+            } else {
+                del.DynamicInvoke(args);
             }
         }
 
