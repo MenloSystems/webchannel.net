@@ -306,7 +306,11 @@ namespace QWebChannel
                 var method = callMsg.MethodBase as MethodInfo;
 
                 if (retVal != null && method != null && retVal.GetType() != method.ReturnType) {
-                    retVal = Convert.ChangeType(retVal, method.ReturnType);
+                    if (method.ReturnType.IsEnum) {
+                        retVal = Enum.ToObject(method.ReturnType, retVal);
+                    } else {
+                        retVal = Convert.ChangeType(retVal, method.ReturnType);
+                    }
                 }
 
                 return new ReturnMessage(retVal, null, 0, null, callMsg);
