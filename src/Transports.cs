@@ -156,7 +156,16 @@ namespace QWebChannel
                 }
             }
 
-            if (!IsSocketConnected(sock.Client) || stream == null) {
+            bool nowDisconnected = false;
+            try {
+                if (!IsSocketConnected(sock.Client) || stream == null) {
+                    nowDisconnected = true;
+                }
+            } catch (ObjectDisposedException) {
+                nowDisconnected = true;
+            }
+
+            if (nowDisconnected) {
                 if (connected) {
                     connected = false;
                     if (OnDisconnected != null) {
