@@ -567,7 +567,7 @@ namespace QWebChannel
         {
             // update property cache
             foreach (var prop in propertyMap) {
-                __propertyCache__[int.Parse(prop.Key)] = prop.Value;
+                __propertyCache__[int.Parse(prop.Key)] = unwrapQObject(prop.Value);
             }
 
             foreach (var sig in signals) {
