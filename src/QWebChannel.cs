@@ -482,11 +482,16 @@ namespace QWebChannel
                 return ((JValue) response).Value;
             }
 
-            if (!(response is JObject)
-                || response == null
-                || response["__QObject*__"] == null
-                || response["id"] == null) {
+            if (!(response is JObject) || response == null) {
                 return response;
+            }
+
+            if (response["__QObject*__"] == null || response["id"] == null) {
+                Dictionary<string, object> ret = new Dictionary<string, object>();
+                foreach (var prop in (JObject) response) {
+                    ret[prop.Key] = unwrapQObject(prop.Value);
+                }
+                return ret;
             }
 
             string objectId = (string) response["id"];
