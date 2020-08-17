@@ -8,18 +8,12 @@
 
 using System;
 using System.Reflection;
-using System.Runtime.Remoting.Messaging;
-using System.Runtime.Remoting.Proxies;
 using System.Linq;
 using System.Text;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
-
-#if NET40
 using System.Dynamic;
-#endif
-
 
 namespace QWebChannel
 {
@@ -191,10 +185,7 @@ namespace QWebChannel
     }
 
 
-    public class QObject
-#if NET40
-        : DynamicObject
-#endif
+    public class QObject : DynamicObject
     {
         public string __id__ = null;
 
@@ -266,64 +257,6 @@ namespace QWebChannel
             }
         }
 
-
-        class QObjectProxy : RealProxy
-        {
-            QObject obj;
-
-            public QObjectProxy(Type type, QObject qObject)
-                : base(type)
-            {
-                obj = qObject;
-            }
-
-            public override IMessage Invoke(IMessage msg)
-            {
-                IMethodCallMessage callMsg = msg as IMethodCallMessage;
-
-                if (callMsg == null) {
-                    return null;
-                }
-
-                object retVal = null;
-
-                if (callMsg.MethodName.StartsWith("get_")) {
-                    retVal = obj.GetMember(callMsg.MethodName.Substring(4));
-                } else if (callMsg.MethodName.StartsWith("set_")) {
-                    obj.SetMember(callMsg.MethodName.Substring(4), callMsg.InArgs[0]);
-                } else if (callMsg.MethodName.StartsWith("add_")) {
-                    Signal sig = (Signal) obj.GetMember(callMsg.MethodName.Substring(4));
-                    sig.connect((Delegate) callMsg.InArgs[0]);
-                } else if (callMsg.MethodName.StartsWith("remove_")) {
-                    Signal sig = (Signal) obj.GetMember(callMsg.MethodName.Substring(4));;
-                    sig.disconnect((Delegate) callMsg.InArgs[0]);
-                } else {
-                    obj.Invoke(callMsg.MethodName, callMsg.InArgs);
-                }
-
-                var method = callMsg.MethodBase as MethodInfo;
-
-                if (retVal != null && method != null && retVal.GetType() != method.ReturnType) {
-                    if (method.ReturnType.IsEnum) {
-                        retVal = Enum.ToObject(method.ReturnType, retVal);
-                    } else {
-                        retVal = Convert.ChangeType(retVal, method.ReturnType);
-                    }
-                }
-
-                return new ReturnMessage(retVal, null, 0, null, callMsg);
-            }
-        }
-
-
-        public T CreateTransparentProxy<T>()
-        {
-            var realProxy = new QObjectProxy(typeof(T), this);
-            return (T) realProxy.GetTransparentProxy();
-        }
-
-
-#if NET40
         public override bool TryInvokeMember(InvokeMemberBinder binder, object[] arguments, out object invokeResult)
         {
             invokeResult = null;
@@ -351,7 +284,6 @@ namespace QWebChannel
                 return false;
             }
         }
-#endif
 
         public bool Invoke(string name, params object[] arguments)
         {
