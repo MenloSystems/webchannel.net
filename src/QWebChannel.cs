@@ -7,13 +7,16 @@
  */
 
 using System;
-using System.Reflection;
-using System.Linq;
-using System.Text;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 using System.Collections.Generic;
 using System.Dynamic;
+using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Threading.Tasks;
+
+using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+
 
 namespace QWebChannel
 {
@@ -35,6 +38,9 @@ namespace QWebChannel
         QWebChannel channel;
         IWebChannelTransport transport;
         Action<QWebChannel> initCallback = null;
+        TaskCompletionSource<bool> connected = new TaskCompletionSource<bool>();
+        public Task IsConnected { get { return connected.Task; } }
+        public event EventHandler OnConnected;
 
         public QWebChannel(IWebChannelTransport transport) : this(transport, null)
         {
@@ -64,6 +70,10 @@ namespace QWebChannel
             if (initCallback != null) {
                 initCallback(channel);
             }
+            if (OnConnected != null) {
+                OnConnected(this, new EventArgs());
+            }
+            connected.SetResult(true);
 
             channel.exec(new {type = (int) QWebChannelMessageTypes.Idle});
         }
