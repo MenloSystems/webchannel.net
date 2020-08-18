@@ -269,9 +269,9 @@ namespace QWebChannel
 
         public override bool TryInvokeMember(InvokeMemberBinder binder, object[] arguments, out object invokeResult)
         {
-            invokeResult = null;
-
-            return Invoke(binder.Name, arguments);
+            bool success = false;
+            invokeResult = InvokeAsync(binder.Name, out success, arguments);
+            return success;
         }
 
         public override bool TryGetMember(GetMemberBinder binder, out object result)
@@ -332,15 +332,33 @@ namespace QWebChannel
             msg["object"] = __id__;
 
             webChannel.exec(msg, (Action<JToken>) delegate(JToken response) {
-                if (response != null) {
-                    var result = unwrapQObject(response);
-                    if (callback != null) {
-                        callback.DynamicInvoke(result);
-                    }
+                var result = unwrapQObject(response);
+                if (callback != null) {
+                    callback.DynamicInvoke(result);
                 }
             });
 
             return true;
+        }
+
+        public Task<object> InvokeAsync(string name, out bool success, params object[] arguments)
+        {
+            var tcs = new TaskCompletionSource<object>();
+            Action<object> callback = (result) => tcs.SetResult(result);
+
+            // Enlarge the arguments array and put the callback into it
+            var argsWithCallback = new object[arguments.Length + 1];
+            arguments.CopyTo(argsWithCallback, 0);
+            argsWithCallback[arguments.Length] = callback;
+
+            success = Invoke(name, argsWithCallback);
+            return tcs.Task;
+        }
+
+        public Task<object> InvokeAsync(string name, params object[] arguments)
+        {
+            bool success = false;
+            return InvokeAsync(name, out success, arguments);
         }
 
         public int GetEnum(string enumName, string key)
