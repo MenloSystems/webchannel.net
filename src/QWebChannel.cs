@@ -33,6 +33,8 @@ namespace QWebChannel
         Response = 10,
     }
 
+    public delegate void SignalEventHandler(object sender, object[] args);
+
     public class QWebChannel
     {
         QWebChannel channel;
@@ -475,7 +477,7 @@ namespace QWebChannel
 
             QObject qObject = new QObject( objectId, (JObject) response["data"], webChannel );
 
-            ((Signal) qObject.GetMember("destroyed")).connect((Action) delegate() {
+            ((Signal) qObject.GetMember("destroyed")).Connect(() => {
                 if (webChannel.objects[objectId] == qObject) {
                     webChannel.objects.Remove(objectId);
                 }
@@ -509,24 +511,20 @@ namespace QWebChannel
 
             if (found) {
                 foreach (var del in connections) {
-                    invokeSignalCallback(del, signalArgs.Take(del.Method.GetParameters().Length).ToArray());
+                    invokeSignalCallback(del, signalArgs);
                 }
             }
         }
 
-        static Type EventHandlerGenericType = typeof(EventHandler<EventArgs>).GetGenericTypeDefinition();
-
         void invokeSignalCallback(Delegate del, object[] args)
         {
-            var delType = del.GetType();
-            if (delType.IsGenericType && delType.GetGenericTypeDefinition() == EventHandlerGenericType) {
-                var eventArgsType = delType.GetGenericArguments()[0];
-                var eventArgs = Activator.CreateInstance(eventArgsType, args);
-                del.DynamicInvoke(this, eventArgs);
-            } else if (delType == typeof(EventHandler)) {
-                del.DynamicInvoke(this, new EventArgs());
+            var sigHandler = del as Action<object[]>;
+            if (sigHandler != null) {
+                sigHandler(args);
             } else {
-                del.DynamicInvoke(args);
+                // Support connections to delegates with less parameters than transmitted
+                var slicedArgs = args.Take(del.Method.GetParameters().Length).ToArray();
+                del.DynamicInvoke(slicedArgs);
             }
         }
 
@@ -595,6 +593,17 @@ namespace QWebChannel
         string signalName;
         bool isPropertyNotifySignal;
 
+        public event SignalEventHandler OnEmission {
+            add {
+                Connect(delegate (object[] args) {
+                    value(qObject, args);
+                });
+            }
+            remove {
+                throw new NotImplementedException("Not yet implemented!");
+            }
+        }
+
         public Signal(QObject qObject, int signalIndex, string signalName, bool isPropertyNotifySignal) {
             this.qObject = qObject;
             this.signalIndex = signalIndex;
@@ -602,7 +611,7 @@ namespace QWebChannel
             this.isPropertyNotifySignal = isPropertyNotifySignal;
         }
 
-        public void connect(Delegate callback) {
+        public void Connect(Delegate callback) {
             if (!qObject.__objectSignals__.ContainsKey(signalIndex)) {
                 qObject.__objectSignals__[signalIndex] = new List<Delegate>();
             }
@@ -621,7 +630,18 @@ namespace QWebChannel
             }
         }
 
-        public void disconnect(Delegate callback) {
+        public void Connect(Action callback) => Connect((Delegate) callback);
+        public void Connect<T>(Action<T> callback) => Connect((Delegate) callback);
+        public void Connect<T1, T2>(Action<T1, T2> callback) => Connect((Delegate) callback);
+        public void Connect<T1, T2, T3>(Action<T1, T2, T3> callback) => Connect((Delegate) callback);
+        public void Connect<T1, T2, T3, T4>(Action<T1, T2, T3, T4> callback) => Connect((Delegate) callback);
+        public void Connect<T1, T2, T3, T4, T5>(Action<T1, T2, T3, T4, T5> callback) => Connect((Delegate) callback);
+        public void Connect<T1, T2, T3, T4, T5, T6>(Action<T1, T2, T3, T4, T5, T6> callback) => Connect((Delegate) callback);
+        public void Connect<T1, T2, T3, T4, T5, T6, T7>(Action<T1, T2, T3, T4, T5, T6, T7> callback) => Connect((Delegate) callback);
+        public void Connect<T1, T2, T3, T4, T5, T6, T7, T8>(Action<T1, T2, T3, T4, T5, T6, T7, T8> callback) => Connect((Delegate) callback);
+        public void Connect<T1, T2, T3, T4, T5, T6, T7, T8, T9>(Action<T1, T2, T3, T4, T5, T6, T7, T8, T9> callback) => Connect((Delegate) callback);
+
+        public void Disconnect(Delegate callback) {
             if (!qObject.__objectSignals__.ContainsKey(signalIndex)) {
                 qObject.__objectSignals__[signalIndex] = new List<Delegate>();
             }

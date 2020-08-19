@@ -7,10 +7,6 @@ namespace chatclient
 {
     class Program
     {
-        static void PrintNewMessage(string time, string user, string message) {
-            Console.WriteLine("[{0}] {1}: {2}", time, user, message);
-        }
-
         static async Task Main(string[] args)
         {
             Console.Error.WriteLine("This thread is {0}", Thread.CurrentThread.ManagedThreadId);
@@ -19,7 +15,9 @@ namespace chatclient
                 var channel = new QWebChannel.QWebChannel(transport);
 
                 // Run the processing task in the background
-                var backgroundProcessTask = transport.ProcessMessagesAsync();
+                var backgroundProcessingTask = transport.ProcessMessagesAsync();
+                backgroundProcessingTask.ContinueWith(t => Console.WriteLine(t.Exception),
+                                                      TaskContinuationOptions.OnlyOnFaulted);
                 
                 await channel.IsConnected;
                 Console.WriteLine("Connected.");
@@ -39,15 +37,14 @@ namespace chatclient
                 }
                 Console.WriteLine("Successfully logged in as {0}!", username);
 
-                chatserver.keepAlive.connect((Action) delegate() {
-                    chatserver.keepAliveResponse(username);
+                ((Signal) chatserver.keepAlive).Connect(() => chatserver.keepAliveResponse(username));
+                ((Signal) chatserver.newMessage).Connect(delegate (string time, string user, string message) {
+                    Console.WriteLine("[{0}] {1}: {2}", time, user, message);
                 });
 
-                chatserver.newMessage.connect((Action<string, string, string>) PrintNewMessage);
-                
-                chatserver.userListChanged.connect((Action) (() => { 
+                ((Signal) chatserver.userListChanged).OnEmission += (sender, args) => {
                     Console.WriteLine("User list: {0}", string.Join(", ", chatserver.userList)); 
-                }));
+                };
 
                 while (true) {
                     var msg = await Console.In.ReadLineAsync();
