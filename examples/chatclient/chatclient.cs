@@ -45,12 +45,13 @@ namespace chatclient
 
                 chatserver.newMessage.connect((Action<string, string, string>) PrintNewMessage);
                 
-                Action printUserList = () => Console.WriteLine("User list: {0}", chatserver.userList);
-                chatserver.userListChanged.connect(printUserList);
+                chatserver.userListChanged.connect((Action) (() => { 
+                    Console.WriteLine("User list: {0}", string.Join(", ", chatserver.userList)); 
+                }));
 
                 while (true) {
-                    var msg = await Task.Run(() => Console.ReadLine());
-                    await chatserver.sendMessage(msg);
+                    var msg = await Console.In.ReadLineAsync();
+                    await chatserver.sendMessage(username, msg);
                 }
             }
         }
