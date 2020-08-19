@@ -297,12 +297,19 @@ namespace QWebChannel
 
         public bool Invoke(string name, params object[] arguments)
         {
-            int methodIdx;
+            object invokedMethod = null;
 
-            bool haveMethod = methods.TryGetValue(name, out methodIdx);
-            if (!haveMethod) {
-                Console.Error.WriteLine("Unknown method {0}::{1}", __id__, name);
-                return false;
+            // Fully specified methods are invoked by id, others by name for host-side overload resolution
+            if (!name.EndsWith(")")) {
+                invokedMethod = name;
+            } else {
+                int methodIdx;
+                bool haveMethod = methods.TryGetValue(name, out methodIdx);
+                if (!haveMethod) {
+                    Console.Error.WriteLine("Unknown method {0}::{1}", __id__, name);
+                    return false;
+                }
+                invokedMethod = methodIdx;
             }
 
             List<object> args = new List<object>();
@@ -325,7 +332,7 @@ namespace QWebChannel
 
             JObject msg = JObject.FromObject(new {
                 type = (int) QWebChannelMessageTypes.InvokeMethod,
-                method = methodIdx,
+                method = invokedMethod,
                 args = args
             });
 
