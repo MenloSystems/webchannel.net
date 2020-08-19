@@ -229,12 +229,12 @@ namespace QWebChannel
         // https://stackoverflow.com/a/23784968 - because .NET WebSockets don't
         // do message handling.
 
-        private struct WebSocketMessage
+        public struct WebSocketMessage
         {
             public WebSocketReceiveResult result;
             public byte[] data;
         }
-        async Task<WebSocketMessage> ReceiveMessage()
+        public async Task<WebSocketMessage> ReceiveMessage()
         {
             ArraySegment<Byte> buffer = new ArraySegment<byte>(new Byte[8192]);
             WebSocketMessage msg = new WebSocketMessage();
