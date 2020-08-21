@@ -8,9 +8,9 @@
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.Dynamic;
 using System.Linq;
-using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -37,47 +37,46 @@ namespace QWebChannel
 
     public class QWebChannel
     {
-        QWebChannel channel;
         IWebChannelTransport transport;
-        Action<QWebChannel> initCallback = null;
         TaskCompletionSource<bool> connected = new TaskCompletionSource<bool>();
+        internal IDictionary<string, QObject> objects = new Dictionary<string, QObject>();
+        public ReadOnlyDictionary<string, QObject> Objects { get; }
+        internal object lockObject = new object();
+
         public Task IsConnected { get { return connected.Task; } }
         public event EventHandler OnConnected;
 
-        public QWebChannel(IWebChannelTransport transport) : this(transport, null)
+        public QWebChannel(IWebChannelTransport transport, Action<QWebChannel> initCallback = null)
         {
-        }
+            Objects = new ReadOnlyDictionary<string, QObject>(objects);
 
-        public QWebChannel(IWebChannelTransport transport, Action<QWebChannel> initCallback)
-        {
-            this.channel = this;
             this.transport = transport;
             this.transport.OnMessage += this.OnMessage;
-            this.initCallback = initCallback;
 
-            channel.exec(new { type = (int) QWebChannelMessageTypes.Init }, new Action<JToken>(ConnectionMade));
+            if (initCallback != null) {
+                OnConnected += (sender, args) => initCallback(this);
+            }
+
+            exec(new { type = (int) QWebChannelMessageTypes.Init }, new Action<JToken>(ConnectionMade));
         }
 
         void ConnectionMade(JToken token) {
             var data = (JObject) token;
 
             foreach (var prop in data) {
-                new QObject(prop.Key, (JObject) prop.Value, channel);
+                new QObject(prop.Key, (JObject) prop.Value, this);
             }
 
             // now unwrap properties, which might reference other registered objects
-            foreach (var obj in channel.objects.Values) {
+            foreach (var obj in objects.Values) {
                 obj.unwrapProperties();
-            }
-            if (initCallback != null) {
-                initCallback(channel);
             }
             if (OnConnected != null) {
                 OnConnected(this, new EventArgs());
             }
             connected.SetResult(true);
 
-            channel.exec(new {type = (int) QWebChannelMessageTypes.Idle});
+            exec(new {type = (int) QWebChannelMessageTypes.Idle});
         }
 
         public void Send(object o)
@@ -91,9 +90,7 @@ namespace QWebChannel
         }
 
         public void Send(byte[] b) {
-            lock (channel.transport) {
-                channel.transport.Send(b);
-            }
+            transport.Send(b);
         }
 
         void OnMessage(object sender, byte[] msg)
@@ -101,17 +98,17 @@ namespace QWebChannel
             string jsonData = Encoding.UTF8.GetString(msg);
             JObject data = JsonConvert.DeserializeObject<JObject>(Encoding.UTF8.GetString(msg));
 
-            lock (channel) {
+            lock (lockObject) {
                 switch ((QWebChannelMessageTypes) (int) data["type"])
                 {
                     case QWebChannelMessageTypes.Signal:
-                        channel.handleSignal(data);
+                        handleSignal(data);
                         break;
                     case QWebChannelMessageTypes.Response:
-                        channel.handleResponse(data);
+                        handleResponse(data);
                         break;
                     case QWebChannelMessageTypes.PropertyUpdate:
-                        channel.handlePropertyUpdate(data);
+                        handlePropertyUpdate(data);
                         break;
                     default:
                         Console.Error.WriteLine("invalid message received: " + jsonData);
@@ -138,7 +135,7 @@ namespace QWebChannel
 
             if (callback == null) {
                 // if no callback is given, send directly
-                channel.Send(data);
+                Send(data);
                 return;
             }
 
@@ -147,17 +144,17 @@ namespace QWebChannel
                 return;
             }
 
-            data["id"] = channel.execId++;
-            channel.execCallbacks[(int) data["id"]] = callback;
-            channel.Send(data);
+            lock (lockObject) {
+                data["id"] = execId++;
+                execCallbacks[(int) data["id"]] = callback;
+            }
+            Send(data);
         }
-
-        public Dictionary<string, QObject> objects = new Dictionary<string, QObject>();
 
         void handleSignal(JToken message)
         {
             QObject obj;
-            if (channel.objects.TryGetValue((string) message["object"], out obj)) {
+            if (objects.TryGetValue((string) message["object"], out obj)) {
                 obj.signalEmitted((int) message["signal"], message["args"]);
             } else {
                 Console.Error.WriteLine("Unhandled signal: " + message["object"] + "::" + message["signal"]);
@@ -171,8 +168,8 @@ namespace QWebChannel
                 return;
             }
 
-            channel.execCallbacks[(int) message["id"]].DynamicInvoke(message["data"]);
-            channel.execCallbacks.Remove((int) message["id"]);
+            execCallbacks[(int) message["id"]].DynamicInvoke(message["data"]);
+            execCallbacks.Remove((int) message["id"]);
         }
 
         void handlePropertyUpdate(JToken message)
@@ -180,18 +177,18 @@ namespace QWebChannel
             foreach (JToken data in message["data"]) {
                 QObject obj = null;
 
-                if (channel.objects.TryGetValue((string) data["object"], out obj)) {
+                if (objects.TryGetValue((string) data["object"], out obj)) {
                     obj.propertyUpdate((JObject) data["signals"], (JObject) data["properties"]);
                 } else {
                     Console.Error.WriteLine("Unhandled property update: " + data["object"] + "::" + data["signal"]);
                 }
             }
 
-            channel.exec(new { type = (int) QWebChannelMessageTypes.Idle } );
+            exec(new { type = (int) QWebChannelMessageTypes.Idle } );
         }
 
         void Debug(object message) {
-            channel.Send(new { type = (int) QWebChannelMessageTypes.Debug, data = message });
+            Send(new { type = (int) QWebChannelMessageTypes.Debug, data = message });
         }
 
     }
@@ -208,6 +205,7 @@ namespace QWebChannel
         IDictionary<string, int> properties = new Dictionary<string, int>();
 
         IDictionary<string, Signal> signals = new Dictionary<string, Signal>();
+        internal object lockObject = new object();
 
         public IDictionary<int, List<Delegate>> __objectSignals__ = new Dictionary<int, List<Delegate>>();
 
@@ -317,18 +315,21 @@ namespace QWebChannel
             List<object> args = new List<object>();
             Delegate callback = null;
 
-            foreach (var argument in arguments) {
-                var del = argument as Delegate;
-                var qObj = argument as QObject;
+            // Lock on the QWebChannel object because we're inspecting its objects
+            lock (webChannel.lockObject) {
+                foreach (var argument in arguments) {
+                    var del = argument as Delegate;
+                    var qObj = argument as QObject;
 
-                if (del != null) {
-                    callback = del;
-                } else if (qObj != null && webChannel.objects.ContainsKey(qObj.__id__)) {
-                    args.Add(JObject.FromObject(new {
-                        id = qObj.__id__
-                    }));
-                } else {
-                    args.Add(argument);
+                    if (del != null) {
+                        callback = del;
+                    } else if (qObj != null && webChannel.objects.ContainsKey(qObj.__id__)) {
+                        args.Add(JObject.FromObject(new {
+                            id = qObj.__id__
+                        }));
+                    } else {
+                        args.Add(argument);
+                    }
                 }
             }
 
@@ -372,32 +373,35 @@ namespace QWebChannel
 
         public int GetEnum(string enumName, string key)
         {
-            JObject enum_ = (JObject) enums[enumName];
-
-            return (int) enum_[key];
+            lock (lockObject) {
+                JObject enum_ = (JObject) enums[enumName];
+                return (int) enum_[key];
+            }
         }
 
         public object GetMember(string name)
         {
-            int propId;
-            bool haveProp = properties.TryGetValue(name, out propId);
+            lock (lockObject) {
+                int propId;
+                bool haveProp = properties.TryGetValue(name, out propId);
 
-            if (haveProp) {
-                return __propertyCache__[propId];
-            }
+                if (haveProp) {
+                    return __propertyCache__[propId];
+                }
 
-            Signal sig;
+                Signal sig;
 
-            bool haveSignal = signals.TryGetValue(name, out sig);
-            if (haveSignal) {
-                return sig;
-            }
+                bool haveSignal = signals.TryGetValue(name, out sig);
+                if (haveSignal) {
+                    return sig;
+                }
 
-            object enum_;
+                object enum_;
 
-            bool haveEnum = enums.TryGetValue(name, out enum_);
-            if (haveEnum) {
-                return enum_;
+                bool haveEnum = enums.TryGetValue(name, out enum_);
+                if (haveEnum) {
+                    return enum_;
+                }
             }
 
             throw new KeyNotFoundException(string.Format("Member {0} not found in object {1}", name, __id__));
@@ -407,20 +411,24 @@ namespace QWebChannel
         public void SetMember(string name, object value)
         {
             int propId;
-            bool haveProp = properties.TryGetValue(name, out propId);
+            lock (lockObject) {
+                bool haveProp = properties.TryGetValue(name, out propId);
 
-            if (!haveProp) {
-                throw new KeyNotFoundException("No property named " + name + " in object " + __id__);
+                if (!haveProp) {
+                    throw new KeyNotFoundException("No property named " + name + " in object " + __id__);
+                }
+
+                __propertyCache__[propId] = value;
             }
-
-            __propertyCache__[propId] = value;
 
             object valueToSend = value;
 
             var qObj = valueToSend as QObject;
 
-            if (qObj != null && webChannel.objects.ContainsKey(qObj.__id__)) {
-                valueToSend = new { id = qObj.__id__ };
+            lock (webChannel.lockObject) {
+                if (qObj != null && webChannel.objects.ContainsKey(qObj.__id__)) {
+                    valueToSend = new { id = qObj.__id__ };
+                }
             }
 
             var msg = JObject.FromObject(new {
@@ -465,10 +473,12 @@ namespace QWebChannel
 
             string objectId = (string) response["id"];
 
-            QObject existingObject;
-            bool haveObject = webChannel.objects.TryGetValue(objectId, out existingObject);
-            if (haveObject)
-                return existingObject;
+            lock (webChannel.lockObject) {
+                QObject existingObject;
+                bool haveObject = webChannel.objects.TryGetValue(objectId, out existingObject);
+                if (haveObject)
+                    return existingObject;
+            }
 
             if (response["data"] == null) {
                 Console.Error.WriteLine("Cannot unwrap unknown QObject " + objectId + " without data.");
@@ -478,8 +488,10 @@ namespace QWebChannel
             QObject qObject = new QObject( objectId, (JObject) response["data"], webChannel );
 
             ((Signal) qObject.GetMember("destroyed")).Connect(() => {
-                if (webChannel.objects[objectId] == qObject) {
-                    webChannel.objects.Remove(objectId);
+                lock (webChannel.lockObject) {
+                    if (webChannel.objects[objectId] == qObject) {
+                        webChannel.objects.Remove(objectId);
+                    }
                 }
             });
 
@@ -507,7 +519,10 @@ namespace QWebChannel
         {
             List<Delegate> connections;
 
-            bool found = __objectSignals__.TryGetValue(signalName, out connections);
+            bool found = false;
+            lock (lockObject) {
+                found = __objectSignals__.TryGetValue(signalName, out connections);
+            }
 
             if (found) {
                 foreach (var del in connections) {
@@ -530,30 +545,36 @@ namespace QWebChannel
 
         public void propertyUpdate(JObject signals, JObject propertyMap)
         {
-            // update property cache
-            foreach (var prop in propertyMap) {
-                __propertyCache__[int.Parse(prop.Key)] = unwrapQObject(prop.Value);
-            }
+            lock (lockObject) {
+                // update property cache
+                foreach (var prop in propertyMap) {
+                    __propertyCache__[int.Parse(prop.Key)] = unwrapQObject(prop.Value);
+                }
 
-            foreach (var sig in signals) {
-                // Invoke all callbacks, as signalEmitted() does not. This ensures the
-                // property cache is updated before the callbacks are invoked.
-                invokeSignalCallbacks(int.Parse(sig.Key), sig.Value.ToObject<object[]>());
+                foreach (var sig in signals) {
+                    // Invoke all callbacks, as signalEmitted() does not. This ensures the
+                    // property cache is updated before the callbacks are invoked.
+                    invokeSignalCallbacks(int.Parse(sig.Key), sig.Value.ToObject<object[]>());
+                }
             }
         }
 
         public void unwrapProperties()
         {
-            foreach (var key in __propertyCache__.Keys.ToList()) {
-                __propertyCache__[key] = unwrapQObject(__propertyCache__[key]);
+            lock (lockObject) {
+                foreach (var key in __propertyCache__.Keys.ToList()) {
+                    __propertyCache__[key] = unwrapQObject(__propertyCache__[key]);
+                }
             }
         }
 
+        // Don't do any locking in this method - it's only used from the constructor
         void addMethod(JToken method)
         {
             methods[(string) method[0]] = (int) method[1];
         }
 
+        // Don't do any locking in this method - it's only used from the constructor
         void bindGetterSetter(JToken propertyInfo)
         {
             int propertyIndex = (int) propertyInfo[0];
@@ -576,6 +597,7 @@ namespace QWebChannel
             this.properties[propertyName] = propertyIndex;
         }
 
+        // Don't do any locking in this method - it's only used from the constructor
         void addSignal(JToken signalData, bool isPropertyNotifySignal)
         {
             string signalName = (string) signalData[0];
@@ -612,21 +634,23 @@ namespace QWebChannel
         }
 
         public void Connect(Delegate callback) {
-            if (!qObject.__objectSignals__.ContainsKey(signalIndex)) {
-                qObject.__objectSignals__[signalIndex] = new List<Delegate>();
-            }
+            lock (qObject.lockObject) {
+                if (!qObject.__objectSignals__.ContainsKey(signalIndex)) {
+                    qObject.__objectSignals__[signalIndex] = new List<Delegate>();
+                }
 
-            qObject.__objectSignals__[signalIndex].Add(callback);
+                qObject.__objectSignals__[signalIndex].Add(callback);
 
-            if (!isPropertyNotifySignal && signalName != "destroyed") {
-                // only required for "pure" signals, handled separately for properties in _propertyUpdate
-                // also note that we always get notified about the destroyed signal
-                var msg = new JObject();
-                msg["type"] = (int) QWebChannelMessageTypes.ConnectToSignal;
-                msg["object"] = qObject.__id__;
-                msg["signal"] = signalIndex;
+                if (!isPropertyNotifySignal && signalName != "destroyed") {
+                    // only required for "pure" signals, handled separately for properties in _propertyUpdate
+                    // also note that we always get notified about the destroyed signal
+                    var msg = new JObject();
+                    msg["type"] = (int) QWebChannelMessageTypes.ConnectToSignal;
+                    msg["object"] = qObject.__id__;
+                    msg["signal"] = signalIndex;
 
-                qObject.webChannel.exec(msg);
+                    qObject.webChannel.exec(msg);
+                }
             }
         }
 
@@ -642,25 +666,27 @@ namespace QWebChannel
         public void Connect<T1, T2, T3, T4, T5, T6, T7, T8, T9>(Action<T1, T2, T3, T4, T5, T6, T7, T8, T9> callback) => Connect((Delegate) callback);
 
         public void Disconnect(Delegate callback) {
-            if (!qObject.__objectSignals__.ContainsKey(signalIndex)) {
-                qObject.__objectSignals__[signalIndex] = new List<Delegate>();
-            }
+            lock (qObject.lockObject) {
+                if (!qObject.__objectSignals__.ContainsKey(signalIndex)) {
+                    qObject.__objectSignals__[signalIndex] = new List<Delegate>();
+                }
 
-            if (!qObject.__objectSignals__[signalIndex].Contains(callback)) {
-                Console.Error.WriteLine("Cannot find connection of signal " + signalName + " to " + callback);
-                return;
-            }
+                if (!qObject.__objectSignals__[signalIndex].Contains(callback)) {
+                    Console.Error.WriteLine("Cannot find connection of signal " + signalName + " to " + callback);
+                    return;
+                }
 
-            qObject.__objectSignals__[signalIndex].Remove(callback);
+                qObject.__objectSignals__[signalIndex].Remove(callback);
 
-            if (!isPropertyNotifySignal && qObject.__objectSignals__[signalIndex].Count == 0) {
-                // only required for "pure" signals, handled separately for properties in _propertyUpdate
-                var msg = new JObject();
-                msg["type"] = (int) QWebChannelMessageTypes.DisconnectFromSignal;
-                msg["object"] = qObject.__id__;
-                msg["signal"] = signalIndex;
+                if (!isPropertyNotifySignal && qObject.__objectSignals__[signalIndex].Count == 0) {
+                    // only required for "pure" signals, handled separately for properties in _propertyUpdate
+                    var msg = new JObject();
+                    msg["type"] = (int) QWebChannelMessageTypes.DisconnectFromSignal;
+                    msg["object"] = qObject.__id__;
+                    msg["signal"] = signalIndex;
 
-                qObject.webChannel.exec(msg);
+                    qObject.webChannel.exec(msg);
+                }
             }
         }
     }
