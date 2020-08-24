@@ -22,7 +22,7 @@ namespace chatclient
                 await channel.IsConnected;
                 Console.WriteLine("Connected.");
 
-                dynamic chatserver = channel.objects["chatserver"];
+                dynamic chatserver = channel.Objects["chatserver"];
 
                 string username = null;
 
