@@ -235,6 +235,15 @@ namespace QWebChannel
             }
         }
 
+        public override string ToString() {
+            string name = (string) GetMember("objectName");
+            if (name.Length > 0) {
+                return string.Format("QObject({0}, name = \"{1}\")", __id__, name);
+            } else {
+                return string.Format("QObject({0})", __id__);
+            }
+        }
+
         public QObject(string name, JObject data, QWebChannel channel)
         {
             this.__id__ = name;
