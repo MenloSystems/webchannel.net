@@ -1,0 +1,3 @@
+# Ignore build artifacts from msbuild
+**/*/bin/
+**/*/obj/
