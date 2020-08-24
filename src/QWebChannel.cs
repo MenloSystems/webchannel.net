@@ -68,7 +68,7 @@ namespace QWebChannel
             }
 
             // now unwrap properties, which might reference other registered objects
-            foreach (var obj in objects.Values) {
+            foreach (var obj in objects.Values.ToArray()) {
                 obj.unwrapProperties();
             }
             if (OnConnected != null) {
