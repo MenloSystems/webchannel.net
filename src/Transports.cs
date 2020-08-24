@@ -289,16 +289,17 @@ namespace QWebChannel
                 while (Connected) {
                     await ProcessNextMessageAsync();
                 }
-            }).ContinueWith(t => Console.WriteLine(t.Exception),
+            }).ContinueWith(t => Console.Error.WriteLine(t.Exception),
                             TaskContinuationOptions.OnlyOnFaulted);
         }
 
         public void Dispose()
         {
-            Disconnect().Wait();
-            if (sock != null) {
-                ((IDisposable) sock).Dispose();
-            }
+            Disconnect().ContinueWith(task => {
+                if (sock != null) {
+                    ((IDisposable) sock).Dispose();
+                }
+            });
         }
 
         public async Task Disconnect()
@@ -326,7 +327,9 @@ namespace QWebChannel
 
         public void Send(byte[] msg)
         {
-            sock.SendAsync(new ArraySegment<byte>(msg), WebSocketMessageType.Text, true, CancellationToken.None).Wait();
+            sock.SendAsync(new ArraySegment<byte>(msg), WebSocketMessageType.Text, true, CancellationToken.None)
+                    .ContinueWith(t => Console.Error.WriteLine(t.Exception),
+                                  TaskContinuationOptions.OnlyOnFaulted);
         }
     }
 }
