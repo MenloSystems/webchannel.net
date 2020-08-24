@@ -15,9 +15,7 @@ namespace chatclient
                 var channel = new QWebChannel.QWebChannel(transport);
 
                 // Run the processing task in the background
-                var backgroundProcessingTask = transport.ProcessMessagesAsync();
-                backgroundProcessingTask.ContinueWith(t => Console.WriteLine(t.Exception),
-                                                      TaskContinuationOptions.OnlyOnFaulted);
+                transport.ProcessMessages();
                 
                 await channel.IsConnected;
                 Console.WriteLine("Connected.");

@@ -272,27 +272,25 @@ namespace QWebChannel
             }
         }
 
-        Task<WebSocketMessage> recvMsgTask = Task.FromResult(new WebSocketMessage());
-
-        public void Pump()
+        async Task ProcessNextMessageAsync()
         {
-            if (recvMsgTask.IsCompleted) {
-                ProcessMessage(recvMsgTask.Result);
-                recvMsgTask = ReceiveMessage();
-            }
+            ProcessMessage(await ReceiveMessage());
         }
 
-        public async Task ProcessNextMessageAsync()
-        {
-            await recvMsgTask;
-            Pump();
-        }
+        Task processMessagesTask;
 
-        public async Task ProcessMessagesAsync()
+        public void ProcessMessages()
         {
-            while (Connected) {
-                await ProcessNextMessageAsync();
+            if (processMessagesTask != null) {
+                return;
             }
+
+            processMessagesTask = Task.Run(async () => {
+                while (Connected) {
+                    await ProcessNextMessageAsync();
+                }
+            }).ContinueWith(t => Console.WriteLine(t.Exception),
+                            TaskContinuationOptions.OnlyOnFaulted);
         }
 
         public void Dispose()
