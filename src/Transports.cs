@@ -311,7 +311,11 @@ namespace QWebChannel
         {
             if (sock != null) {
                 if (sock.State == WebSocketState.Open || sock.State == WebSocketState.Connecting) {
-                    await sock.CloseAsync(WebSocketCloseStatus.NormalClosure, reason, CancellationToken.None);
+                    try {
+                        await sock.CloseAsync(WebSocketCloseStatus.NormalClosure, reason, CancellationToken.None);
+                    } catch (WebSocketException) {
+                        // Don't handle exceptions when we wanted to close anyway
+                    }
                 }
                 if (OnDisconnected != null) {
                     OnDisconnected(this, new EventArgs());
