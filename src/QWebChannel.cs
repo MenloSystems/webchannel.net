@@ -198,7 +198,7 @@ namespace QWebChannel
     {
         public string __id__ = null;
 
-        IDictionary<string, object> enums = new Dictionary<string, object>();
+        IDictionary<string, EnumWrapper> enums = new Dictionary<string, EnumWrapper>();
 
         IDictionary<string, int> methods = new Dictionary<string, int>();
         IDictionary<int, object> __propertyCache__ = new Dictionary<int, object>();
@@ -229,11 +229,7 @@ namespace QWebChannel
             }
         }
 
-        public ICollection<string> Enums {
-            get {
-                return enums.Keys;
-            }
-        }
+        public ReadOnlyDictionary<string, EnumWrapper> Enums { get; }
 
         public override string ToString() {
             string name = (string) GetMember("objectName");
@@ -271,9 +267,11 @@ namespace QWebChannel
 
             if (data["enums"] != null) {
                 foreach (var enumPair in (JObject) data["enums"]) {
-                    enums[enumPair.Key] = (JObject) enumPair.Value;
+                    enums[enumPair.Key] = new EnumWrapper(enumPair.Key, (JObject) enumPair.Value);
                 }
             }
+
+            Enums = new ReadOnlyDictionary<string, EnumWrapper>(enums);
         }
 
         public override bool TryInvokeMember(InvokeMemberBinder binder, object[] arguments, out object invokeResult)
@@ -380,11 +378,10 @@ namespace QWebChannel
             return InvokeAsync(name, out success, arguments);
         }
 
-        public int GetEnum(string enumName, string key)
+        public int GetEnumValue(string enumName, string key)
         {
             lock (lockObject) {
-                JObject enum_ = (JObject) enums[enumName];
-                return (int) enum_[key];
+                return Enums[enumName][key];
             }
         }
 
@@ -405,7 +402,7 @@ namespace QWebChannel
                     return sig;
                 }
 
-                object enum_;
+                EnumWrapper enum_;
 
                 bool haveEnum = enums.TryGetValue(name, out enum_);
                 if (haveEnum) {
@@ -697,6 +694,45 @@ namespace QWebChannel
                     qObject.webChannel.exec(msg);
                 }
             }
+        }
+    }
+
+    public class EnumWrapper
+    {
+        JObject def;
+        public JObject UnderylingObject { get => def; }
+        public string Name { get; }
+
+        internal EnumWrapper(string name, JObject def) {
+            this.def = def;
+            this.Name = name;
+        }
+
+        public string KeyFromValue(object value) {
+            var tok = JToken.FromObject(value);
+            return KeyFromValue(tok);
+        }
+
+        public string KeyFromValue(JToken value) {
+            var p = def.Properties().FirstOrDefault(pair => pair.Value.Equals(value));
+            return p != null ? p.Name : "";
+        }
+
+        public int Value(string key) {
+            JToken tok;
+            def.TryGetValue(key, out tok);
+            if (tok == null) {
+                throw new KeyNotFoundException(string.Format("Enum {0} has no member {1}", Name, key));
+            }
+            return tok.Value<int>();
+        }
+
+        public int this[string key] {
+            get => Value(key);
+        }
+
+        public override string ToString() {
+            return Name + ' ' + def.ToString();
         }
     }
 }
