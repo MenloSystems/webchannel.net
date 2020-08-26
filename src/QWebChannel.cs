@@ -705,7 +705,7 @@ namespace QWebChannel
         public JObject UnderylingObject { get => def; }
         public string Name { get; }
 
-        internal EnumWrapper(string name, JObject def) {
+        public EnumWrapper(string name, JObject def) {
             this.def = def;
             this.Name = name;
         }
