@@ -245,7 +245,9 @@ namespace QWebChannel
             this.__id__ = name;
             this.webChannel = channel;
 
-            webChannel.objects[name] = this;
+            lock (webChannel.lockObject) {
+                webChannel.objects[name] = this;
+            }
 
             if (data["methods"] != null) {
                 foreach (var method in data["methods"]) {
