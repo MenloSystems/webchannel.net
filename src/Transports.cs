@@ -11,7 +11,7 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Collections;
+using System.Collections.Generic;
 
 namespace QWebChannel
 {
@@ -209,6 +209,7 @@ namespace QWebChannel
     public class WebChannelWebSocketTransport : IWebChannelTransport, IDisposable
     {
         ClientWebSocket sock;
+        Queue<byte[]> sendQueue = new Queue<byte[]>();
 
         public event Action<object, byte[]> OnMessage;
         public event EventHandler OnDisconnected;
@@ -331,9 +332,46 @@ namespace QWebChannel
 
         public void Send(byte[] msg)
         {
-            sock.SendAsync(new ArraySegment<byte>(msg), WebSocketMessageType.Text, true, CancellationToken.None)
-                    .ContinueWith(t => Console.Error.WriteLine(t.Exception),
-                                  TaskContinuationOptions.OnlyOnFaulted);
+            lock (sendQueue)
+            {
+                sendQueue.Enqueue(msg);
+                Task.Run(async () => await SendQueuedMessagesAsync());
+            }
+        }
+
+        int sendInProgress = 0;
+
+        async Task SendQueuedMessagesAsync()
+        {
+            int oldValue = Interlocked.Exchange(ref sendInProgress, 1);
+            if (oldValue != 0) {
+                // Sending was already in progress
+                return;
+            }
+
+            Queue<byte[]> q;
+            lock (sendQueue) {
+                q = new Queue<byte[]>(sendQueue);
+                sendQueue.Clear();
+            }
+
+            while (q.Count > 0) {
+                var msg = q.Dequeue();
+                try {
+                    await sock.SendAsync(new ArraySegment<byte>(msg), WebSocketMessageType.Text, true, CancellationToken.None);
+                } catch (Exception e) {
+                    Console.Error.WriteLine("Failed to send message: {}", e);
+                }
+            }
+
+            sendInProgress = 0;
+
+            lock (sendQueue) {
+                // More items where enqueued in the meantime. Run again.
+                if (sendQueue.Count > 0) {
+                    Task.Run(async () => await SendQueuedMessagesAsync());
+                }
+            }
         }
     }
 }
