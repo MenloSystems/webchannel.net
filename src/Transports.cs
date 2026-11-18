@@ -322,7 +322,10 @@ namespace QWebChannel
         async Task Disconnect(string reason)
         {
             if (sock != null) {
-                if (sock.State == WebSocketState.Open || sock.State == WebSocketState.Connecting) {
+                // CloseReceived: the server closed, and waits for the answer
+                // that completes the close handshake
+                if (sock.State == WebSocketState.Open || sock.State == WebSocketState.Connecting
+                        || sock.State == WebSocketState.CloseReceived) {
                     try {
                         await sock.CloseAsync(WebSocketCloseStatus.NormalClosure, reason, CancellationToken.None);
                     } catch (WebSocketException) {
