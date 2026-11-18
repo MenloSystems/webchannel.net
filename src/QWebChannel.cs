@@ -777,6 +777,10 @@ namespace QWebChannel
         }
 
         public void Connect(Delegate callback) {
+            // For every signal, also those that need no request: after the
+            // close, the callback could never be called
+            qObject.webChannel.ThrowIfClosed();
+
             lock (qObject.lockObject) {
                 if (!qObject.__objectSignals__.ContainsKey(signalIndex)) {
                     qObject.__objectSignals__[signalIndex] = new List<Delegate>();

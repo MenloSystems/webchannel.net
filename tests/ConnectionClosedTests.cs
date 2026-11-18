@@ -366,6 +366,33 @@ namespace WebChannelTests
         }
 
         /**
+         * @scenario The change signal of a property is connected after the
+         *           connection closed
+         * @given A channel whose connection closed
+         * @when  A callback is connected to the change signal of a property,
+         *        which needs no request to the server
+         * @then  The connect throws ConnectionClosedException as for other
+         *        signals, as the callback could never be called
+         */
+        [Fact]
+        public void closedChannel_ChangeSignalConnect_throws()
+        {
+            // GIVEN: A channel whose connection closed.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+            var signal = (Signal) channel.Objects[ObjectName]
+                .GetMember(PropertyName + "Changed");
+            channel.ConnectionClosed();
+
+            // WHEN: A callback is connected.
+            var connect = Record.Exception(
+                () => signal.Connect((Action<object[]>) OnSignal));
+
+            // THEN: It failed.
+            Assert.IsType<ConnectionClosedException>(connect);
+        }
+
+        /**
          * @scenario A signal is disconnected after the connection closed,
          *           e.g. in a finally block
          * @given A callback connected to a signal of the server, and a
