@@ -24,6 +24,9 @@ namespace WebChannelTests
         const string PropertyName = "count";
         const int Count = 6;
         const int NewCount = 7;
+        // The index of the property, and of its change signal
+        const int PropertyIndex = 0;
+        const int ChangeSignalIndex = 1;
         const string SignalName = "newMessage";
         const string MethodName = "readLog";
         // What the server answers to a call
@@ -113,6 +116,45 @@ namespace WebChannelTests
             Assert.Null(receive);
             await Assert.ThrowsAsync<ConnectionClosedException>(
                 () => call.WaitAsync(TestContext.Current.CancellationToken));
+        }
+
+        /**
+         * @scenario A property update arrives after the connection closed,
+         *           e.g. from the buffer of the transport
+         * @given A channel whose connection closed
+         * @when  An update of a property arrives
+         * @then  The channel handles it without an error, and sends no idle
+         *        on the closed connection
+         */
+        [Fact]
+        public void latePropertyUpdate_AfterConnectionClosed_sendsNothing()
+        {
+            // GIVEN: A channel whose connection closed.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+            var idles = transport.SentOfType(MessageType.Idle).Count();
+            channel.ConnectionClosed();
+
+            // WHEN: An update of the property arrives.
+            var receive = Record.Exception(() => transport.Receive(
+                new JObject {
+                    ["type"] = MessageType.PropertyUpdate,
+                    ["data"] = new JArray {
+                        new JObject {
+                            ["object"] = ObjectName,
+                            ["signals"] = new JObject {
+                                [$"{ChangeSignalIndex}"] = new JArray(),
+                            },
+                            ["properties"] = new JObject {
+                                [$"{PropertyIndex}"] = NewCount,
+                            },
+                        },
+                    },
+                }));
+
+            // THEN: No error, and no further idle.
+            Assert.Null(receive);
+            Assert.Equal(idles, transport.SentOfType(MessageType.Idle).Count());
         }
 
         /**

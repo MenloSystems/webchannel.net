@@ -21,7 +21,9 @@ namespace WebChannelTests
     /// </summary>
     static class MessageType
     {
+        public const int PropertyUpdate = 2;
         public const int Init = 3;
+        public const int Idle = 4;
         public const int InvokeMethod = 6;
         public const int ConnectToSignal = 7;
         public const int DisconnectFromSignal = 8;

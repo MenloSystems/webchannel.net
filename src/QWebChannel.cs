@@ -263,7 +263,11 @@ namespace QWebChannel
                 }
             }
 
-            exec(new { type = (int) QWebChannelMessageTypes.Idle } );
+            // After the close nobody can receive it, e.g. for an update from
+            // the buffer of the transport
+            if (!closed) {
+                exec(new { type = (int) QWebChannelMessageTypes.Idle } );
+            }
         }
 
         void Debug(object message) {
