@@ -18,7 +18,7 @@ dotnet build
 
 ## Testing
 
-The tests in `tests` use xUnit v3 and need the .NET SDK 8 or newer. They are
+The tests in `tests` use xUnit v3 and need the .NET SDK 10 or newer. They are
 built as a program, so run them with
 
 ```
