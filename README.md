@@ -14,3 +14,13 @@ Install the .NET Core SDK, then simply run
 ```
 dotnet build
 ```
+
+
+## Testing
+
+The tests in `tests` use xUnit v3 and need the .NET SDK 8 or newer. They are
+built as a program, so run them with
+
+```
+dotnet run --project tests
+```
