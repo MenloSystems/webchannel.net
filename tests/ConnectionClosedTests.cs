@@ -243,6 +243,31 @@ namespace WebChannelTests
         }
 
         /**
+         * @scenario Sending a property write fails
+         * @given A connected channel whose transport fails on the next send
+         * @when  A property is written
+         * @then  The write throws the error of the transport, and the
+         *        property keeps the value that the server has
+         */
+        [Fact]
+        public void failedSend_SetMember_keepsTheValue()
+        {
+            // GIVEN: A transport that fails on the next send.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+            var obj = channel.Objects[ObjectName];
+            transport.FailNextSend = true;
+
+            // WHEN: The property is written.
+            var write = Record.Exception(
+                () => obj.SetMember(PropertyName, NewCount));
+
+            // THEN: It failed, and the property kept its value.
+            Assert.IsType<IOException>(write);
+            Assert.Equal(Count, Convert.ToInt32(obj.GetMember(PropertyName)));
+        }
+
+        /**
          * @scenario A method is called after the connection closed
          * @given A channel whose connection closed
          * @when  A method is called

@@ -540,6 +540,7 @@ namespace QWebChannel
         public void SetMember(string name, object value)
         {
             int propId;
+            object oldValue;
             lock (lockObject) {
                 bool haveProp = properties.TryGetValue(name, out propId);
 
@@ -547,30 +548,40 @@ namespace QWebChannel
                     throw new KeyNotFoundException("No property named " + name + " in object " + __id__);
                 }
 
-                // The value cannot reach the server any more
-                webChannel.ThrowIfClosed();
-
+                __propertyCache__.TryGetValue(propId, out oldValue);
                 __propertyCache__[propId] = value;
             }
 
-            object valueToSend = value;
+            try {
+                object valueToSend = value;
 
-            var qObj = valueToSend as QObject;
+                var qObj = valueToSend as QObject;
 
-            lock (webChannel.lockObject) {
-                if (qObj != null && webChannel.objects.ContainsKey(qObj.__id__)) {
-                    valueToSend = new { id = qObj.__id__ };
+                lock (webChannel.lockObject) {
+                    if (qObj != null && webChannel.objects.ContainsKey(qObj.__id__)) {
+                        valueToSend = new { id = qObj.__id__ };
+                    }
                 }
+
+                var msg = JObject.FromObject(new {
+                    type = (int) QWebChannelMessageTypes.SetProperty,
+                    property = propId,
+                    value = valueToSend
+                });
+
+                msg["object"] = __id__;
+                webChannel.exec(msg);
+            } catch {
+                // The value did not reach the server, e.g. after the close,
+                // so no update for it can arrive either; a newer value of
+                // the server stays
+                lock (lockObject) {
+                    if (ReferenceEquals(__propertyCache__[propId], value)) {
+                        __propertyCache__[propId] = oldValue;
+                    }
+                }
+                throw;
             }
-
-            var msg = JObject.FromObject(new {
-                type = (int) QWebChannelMessageTypes.SetProperty,
-                property = propId,
-                value = valueToSend
-            });
-
-            msg["object"] = __id__;
-            webChannel.exec(msg);
         }
 
 
