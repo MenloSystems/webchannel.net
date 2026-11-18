@@ -35,6 +35,18 @@ namespace QWebChannel
 
     public delegate void SignalEventHandler(object sender, object[] args);
 
+    /// <summary>
+    /// Thrown for a request that cannot get an answer, because the
+    /// connection of the channel closed
+    /// </summary>
+    public class ConnectionClosedException : InvalidOperationException
+    {
+        public ConnectionClosedException()
+            : base("The WebChannel connection was closed")
+        {
+        }
+    }
+
     public class QWebChannel
     {
         IWebChannelTransport transport;
@@ -44,6 +56,13 @@ namespace QWebChannel
         internal object lockObject = new object();
 
         public Task IsConnected { get { return connected.Task; } }
+
+        // Read without the lock: SetMember() and Signal.Connect() check it
+        // under the lock of their object, which must not wait for this one
+        volatile bool closed;
+        // The calls of InvokeAsync() that wait for their answer
+        readonly HashSet<TaskCompletionSource<object>> pendingCalls =
+            new HashSet<TaskCompletionSource<object>>();
         public event EventHandler OnConnected;
 
         public QWebChannel(IWebChannelTransport transport, Action<QWebChannel> initCallback = null)
@@ -58,6 +77,59 @@ namespace QWebChannel
             }
 
             exec(new { type = (int) QWebChannelMessageTypes.Init }, new Action<JToken>(ConnectionMade));
+        }
+
+        /// <summary>
+        /// Tells the channel that the connection of its transport closed
+        /// </summary>
+        /// The answers to pending calls cannot arrive any more, so the calls
+        /// of InvokeAsync() fail with ConnectionClosedException, and so does
+        /// IsConnected before the init. Afterwards calls, property writes and
+        /// signal connects fail at once. A channel serves one connection, so
+        /// use a new channel for a new connection.
+        public void ConnectionClosed()
+        {
+            List<TaskCompletionSource<object>> pending;
+            lock (lockObject) {
+                closed = true;
+                execCallbacks.Clear();
+                pending = pendingCalls.ToList();
+                pendingCalls.Clear();
+            }
+            // Outside the lock: a failed task may run the code that awaits it
+            connected.TrySetException(new ConnectionClosedException());
+            foreach (var call in pending) {
+                call.TrySetException(new ConnectionClosedException());
+            }
+        }
+
+        internal bool IsClosed { get { return closed; } }
+
+        internal void ThrowIfClosed()
+        {
+            if (IsClosed) {
+                throw new ConnectionClosedException();
+            }
+        }
+
+        // Tracks a call that waits for its answer, so that ConnectionClosed()
+        // can fail it; returns false if the connection closed already
+        internal bool AddPendingCall(TaskCompletionSource<object> call)
+        {
+            lock (lockObject) {
+                if (closed) {
+                    return false;
+                }
+                pendingCalls.Add(call);
+                return true;
+            }
+        }
+
+        internal void RemovePendingCall(TaskCompletionSource<object> call)
+        {
+            lock (lockObject) {
+                pendingCalls.Remove(call);
+            }
         }
 
         void ConnectionMade(JToken token) {
@@ -127,6 +199,8 @@ namespace QWebChannel
 
         public void exec(object dataObject, Delegate callback)
         {
+            ThrowIfClosed();
+
             var data = dataObject as JObject;
 
             if (data == null) {
@@ -363,14 +437,29 @@ namespace QWebChannel
         public Task<object> InvokeAsync(string name, out bool success, params object[] arguments)
         {
             var tcs = new TaskCompletionSource<object>();
-            Action<object> callback = (result) => tcs.SetResult(result);
+            if (!webChannel.AddPendingCall(tcs)) {
+                success = false;
+                tcs.SetException(new ConnectionClosedException());
+                return tcs.Task;
+            }
+            Action<object> callback = (result) => {
+                webChannel.RemovePendingCall(tcs);
+                tcs.TrySetResult(result);
+            };
 
             // Enlarge the arguments array and put the callback into it
             var argsWithCallback = new object[arguments.Length + 1];
             arguments.CopyTo(argsWithCallback, 0);
             argsWithCallback[arguments.Length] = callback;
 
-            success = Invoke(name, argsWithCallback);
+            try {
+                success = Invoke(name, argsWithCallback);
+            } catch (ConnectionClosedException e) {
+                // The connection closed since the call was tracked
+                webChannel.RemovePendingCall(tcs);
+                success = false;
+                tcs.TrySetException(e);
+            }
             return tcs.Task;
         }
 
@@ -425,6 +514,9 @@ namespace QWebChannel
                 if (!haveProp) {
                     throw new KeyNotFoundException("No property named " + name + " in object " + __id__);
                 }
+
+                // The value cannot reach the server any more
+                webChannel.ThrowIfClosed();
 
                 __propertyCache__[propId] = value;
             }
@@ -647,8 +739,6 @@ namespace QWebChannel
                     qObject.__objectSignals__[signalIndex] = new List<Delegate>();
                 }
 
-                qObject.__objectSignals__[signalIndex].Add(callback);
-
                 if (!isPropertyNotifySignal && signalName != "destroyed") {
                     // only required for "pure" signals, handled separately for properties in _propertyUpdate
                     // also note that we always get notified about the destroyed signal
@@ -657,8 +747,12 @@ namespace QWebChannel
                     msg["object"] = qObject.__id__;
                     msg["signal"] = signalIndex;
 
+                    // Before the callback is added: after the close, this
+                    // throws and leaves nothing registered
                     qObject.webChannel.exec(msg);
                 }
+
+                qObject.__objectSignals__[signalIndex].Add(callback);
             }
         }
 
@@ -686,7 +780,10 @@ namespace QWebChannel
 
                 qObject.__objectSignals__[signalIndex].Remove(callback);
 
-                if (!isPropertyNotifySignal && qObject.__objectSignals__[signalIndex].Count == 0) {
+                // After the close the server has no connections any more, and
+                // cleanup code can still disconnect
+                if (!isPropertyNotifySignal && qObject.__objectSignals__[signalIndex].Count == 0
+                        && !qObject.webChannel.IsClosed) {
                     // only required for "pure" signals, handled separately for properties in _propertyUpdate
                     var msg = new JObject();
                     msg["type"] = (int) QWebChannelMessageTypes.DisconnectFromSignal;
