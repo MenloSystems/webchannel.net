@@ -219,10 +219,21 @@ namespace QWebChannel
             }
 
             lock (lockObject) {
+                // Again under the lock that ConnectionClosed() takes: either
+                // the close comes first, or it drops this callback
+                ThrowIfClosed();
                 data["id"] = execId++;
                 execCallbacks[(int) data["id"]] = callback;
             }
-            Send(data);
+            try {
+                Send(data);
+            } catch {
+                // No answer can arrive for a request that was not sent
+                lock (lockObject) {
+                    execCallbacks.Remove((int) data["id"]);
+                }
+                throw;
+            }
         }
 
         void handleSignal(JToken message)

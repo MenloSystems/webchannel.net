@@ -4,6 +4,8 @@
  */
 
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -208,6 +210,36 @@ namespace WebChannelTests
             await Assert.ThrowsAsync<MissingMethodException>(
                 () => call.WaitAsync(TestContext.Current.CancellationToken));
             Assert.Empty(transport.SentOfType(MessageType.InvokeMethod));
+        }
+
+        /**
+         * @scenario Sending a call fails, but an answer arrives anyway
+         * @given A call with a callback whose send failed
+         * @when  An answer to the id of the call arrives
+         * @then  The callback is not called, as the call failed
+         */
+        [Fact]
+        public void failedSend_Invoke_dropsTheCallback()
+        {
+            // GIVEN: A call whose send failed.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+            var answers = new List<object>();
+            transport.FailNextSend = true;
+            var send = Record.Exception(
+                () => channel.Objects[ObjectName].Invoke(
+                    MethodName, (Action<object>) answers.Add));
+
+            // WHEN: An answer to the call arrives.
+            transport.Receive(new JObject {
+                ["type"] = MessageType.Response,
+                ["id"] = transport.FailedMessage["id"],
+                ["data"] = Answer,
+            });
+
+            // THEN: The send failed, and the callback got nothing.
+            Assert.IsType<IOException>(send);
+            Assert.Empty(answers);
         }
 
         /**

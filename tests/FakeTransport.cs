@@ -5,6 +5,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -43,8 +44,23 @@ namespace WebChannelTests
 
         public void Send(byte[] msg)
         {
-            sent.Add(JObject.Parse(Encoding.UTF8.GetString(msg)));
+            var message = JObject.Parse(Encoding.UTF8.GetString(msg));
+            if (FailNextSend) {
+                FailNextSend = false;
+                FailedMessage = message;
+                throw new IOException("Sending failed");
+            }
+            sent.Add(message);
         }
+
+        /// <summary>
+        /// Whether the next send throws IOException, as a broken transport
+        /// does
+        /// </summary>
+        public bool FailNextSend { get; set; }
+
+        /// <summary>The message whose send failed</summary>
+        public JObject FailedMessage { get; private set; }
 
         /// <summary>The messages that the channel sent, in order</summary>
         public IReadOnlyList<JObject> Sent => sent;
