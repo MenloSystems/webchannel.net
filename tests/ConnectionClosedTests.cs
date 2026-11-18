@@ -15,6 +15,7 @@ using Xunit;
 using QWebChannel;
 
 using Channel = QWebChannel.QWebChannel;
+using MessageType = QWebChannel.QWebChannelMessageTypes;
 
 namespace WebChannelTests
 {
@@ -26,11 +27,19 @@ namespace WebChannelTests
         const string PropertyName = "count";
         const int Count = 6;
         const int NewCount = 7;
-        // The index of the property, and of its change signal
-        const int PropertyIndex = 0;
-        const int ChangeSignalIndex = 1;
         const string SignalName = "newMessage";
         const string MethodName = "readLog";
+        // The indexes of the members, as the meta object of Qt numbers
+        // them: signals and methods share one list, the properties have
+        // their own
+        const int DestroyedIndex = 0;
+        const int ChangeSignalIndex = 1;
+        const int SignalIndex = 2;
+        const int MethodIndex = 3;
+        const int PropertyIndex = 0;
+        // Says that the change signal of the property has the usual name,
+        // the name of the property with "Changed"
+        const int UsualChangeSignalName = 1;
         // A full signature, which the channel checks against the methods of
         // the object
         const string UnknownMethod = "unknownMethod()";
@@ -40,19 +49,21 @@ namespace WebChannelTests
         // forever fails the test instead of hanging
         const int TestTimeout = 5000;
 
-        // The description of the object, as the server sends it at the init.
-        // Signals and methods share their indexes, as in the meta object of
-        // Qt. The change signal of the property has index 1; [1, 1] says
-        // that its name is the name of the property with "Changed".
+        // The description of the object, as the server sends it at the init
         static JObject Objects() => new JObject {
             [ObjectName] = new JObject {
-                ["methods"] = new JArray { new JArray(MethodName, 3) },
+                ["methods"] = new JArray {
+                    new JArray(MethodName, MethodIndex),
+                },
                 ["properties"] = new JArray {
-                    new JArray(0, PropertyName, new JArray(1, 1), Count),
+                    new JArray(PropertyIndex, PropertyName,
+                               new JArray(UsualChangeSignalName,
+                                          ChangeSignalIndex),
+                               Count),
                 },
                 ["signals"] = new JArray {
-                    new JArray("destroyed", 0),
-                    new JArray(SignalName, 2),
+                    new JArray("destroyed", DestroyedIndex),
+                    new JArray(SignalName, SignalIndex),
                 },
                 ["enums"] = new JObject(),
             },
@@ -112,7 +123,7 @@ namespace WebChannelTests
             // WHEN: The answer arrives.
             var receive = Record.Exception(() => transport.Receive(
                 new JObject {
-                    ["type"] = MessageType.Response,
+                    ["type"] = (int) MessageType.Response,
                     ["id"] = id,
                     ["data"] = Answer,
                 }));
@@ -143,7 +154,7 @@ namespace WebChannelTests
             // WHEN: An update of the property arrives.
             var receive = Record.Exception(() => transport.Receive(
                 new JObject {
-                    ["type"] = MessageType.PropertyUpdate,
+                    ["type"] = (int) MessageType.PropertyUpdate,
                     ["data"] = new JArray {
                         new JObject {
                             ["object"] = ObjectName,
@@ -232,7 +243,7 @@ namespace WebChannelTests
 
             // WHEN: An answer to the call arrives.
             transport.Receive(new JObject {
-                ["type"] = MessageType.Response,
+                ["type"] = (int) MessageType.Response,
                 ["id"] = transport.FailedMessage["id"],
                 ["data"] = Answer,
             });

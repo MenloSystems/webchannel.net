@@ -14,24 +14,10 @@ using Newtonsoft.Json.Linq;
 
 using QWebChannel;
 
+using MessageType = QWebChannel.QWebChannelMessageTypes;
+
 namespace WebChannelTests
 {
-    /// <summary>
-    /// The message types of the protocol that the tests use, as in
-    /// QWebChannelMessageTypes, which is internal
-    /// </summary>
-    static class MessageType
-    {
-        public const int PropertyUpdate = 2;
-        public const int Init = 3;
-        public const int Idle = 4;
-        public const int InvokeMethod = 6;
-        public const int ConnectToSignal = 7;
-        public const int DisconnectFromSignal = 8;
-        public const int SetProperty = 9;
-        public const int Response = 10;
-    }
-
     /// <summary>
     /// A transport in the process: it keeps what the channel sends, and
     /// hands the channel what a test lets the server answer
@@ -73,8 +59,8 @@ namespace WebChannelTests
         public IReadOnlyList<JObject> Sent => sent;
 
         /// <summary>The sent messages of type type</summary>
-        public IEnumerable<JObject> SentOfType(int type) =>
-            sent.Where(message => (int) message["type"] == type);
+        public IEnumerable<JObject> SentOfType(MessageType type) =>
+            sent.Where(message => (int) message["type"] == (int) type);
 
         /// <summary>Hands the channel a message of the server</summary>
         public void Receive(JObject message)
@@ -91,7 +77,7 @@ namespace WebChannelTests
         {
             var init = SentOfType(MessageType.Init).Single();
             Receive(new JObject {
-                ["type"] = MessageType.Response,
+                ["type"] = (int) MessageType.Response,
                 ["id"] = init["id"],
                 ["data"] = objects,
             });
