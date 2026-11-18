@@ -4,6 +4,7 @@
  */
 
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 
 using Newtonsoft.Json.Linq;
@@ -25,6 +26,8 @@ namespace WebChannelTests
         const int NewCount = 7;
         const string SignalName = "newMessage";
         const string MethodName = "readLog";
+        // What the server answers to a call
+        const string Answer = "first message";
         // The longest that an async test may take, in ms; a call that waits
         // forever fails the test instead of hanging
         const int TestTimeout = 5000;
@@ -76,6 +79,38 @@ namespace WebChannelTests
             channel.ConnectionClosed();
 
             // THEN: The call fails.
+            await Assert.ThrowsAsync<ConnectionClosedException>(
+                () => call.WaitAsync(TestContext.Current.CancellationToken));
+        }
+
+        /**
+         * @scenario The answer to a call arrives after the connection closed,
+         *           e.g. from the buffer of the transport
+         * @given A call that the close failed
+         * @when  The answer of the server to the call arrives
+         * @then  The channel ignores it, and the call stays failed
+         */
+        [Fact(Timeout = TestTimeout)]
+        public async Task lateAnswer_AfterConnectionClosed_isIgnored()
+        {
+            // GIVEN: A call that the close failed.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+            var call = channel.Objects[ObjectName].InvokeAsync(MethodName);
+            var id = transport.SentOfType(MessageType.InvokeMethod)
+                .Single()["id"];
+            channel.ConnectionClosed();
+
+            // WHEN: The answer arrives.
+            var receive = Record.Exception(() => transport.Receive(
+                new JObject {
+                    ["type"] = MessageType.Response,
+                    ["id"] = id,
+                    ["data"] = Answer,
+                }));
+
+            // THEN: No error, and the call failed with the close.
+            Assert.Null(receive);
             await Assert.ThrowsAsync<ConnectionClosedException>(
                 () => call.WaitAsync(TestContext.Current.CancellationToken));
         }

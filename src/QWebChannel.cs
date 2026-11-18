@@ -242,7 +242,12 @@ namespace QWebChannel
                 return;
             }
 
-            execCallbacks[(int) message["id"]].DynamicInvoke(message["data"]);
+            Delegate callback;
+            if (!execCallbacks.TryGetValue((int) message["id"], out callback)) {
+                // e.g. the answer to a call that ConnectionClosed() failed
+                return;
+            }
+            callback.DynamicInvoke(message["data"]);
             execCallbacks.Remove((int) message["id"]);
         }
 
