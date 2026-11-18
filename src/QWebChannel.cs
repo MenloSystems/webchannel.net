@@ -446,8 +446,10 @@ namespace QWebChannel
         public Task<object> InvokeAsync(string name, out bool success, params object[] arguments)
         {
             var tcs = new TaskCompletionSource<object>();
+            // After the close the call fails through its task, while success
+            // still means that the method exists, as for dynamic calls
             if (!webChannel.AddPendingCall(tcs)) {
-                success = false;
+                success = true;
                 tcs.SetException(new ConnectionClosedException());
                 return tcs.Task;
             }
@@ -466,7 +468,7 @@ namespace QWebChannel
             } catch (ConnectionClosedException e) {
                 // The connection closed since the call was tracked
                 webChannel.RemovePendingCall(tcs);
-                success = false;
+                success = true;
                 tcs.TrySetException(e);
             }
             return tcs.Task;

@@ -158,6 +158,31 @@ namespace WebChannelTests
         }
 
         /**
+         * @scenario A method is called through dynamic after the connection
+         *           closed, the usual way in C#
+         * @given A channel whose connection closed
+         * @when  A method of an object is called through dynamic
+         * @then  The call fails with ConnectionClosedException, not with an
+         *        error that the method does not exist
+         */
+        [Fact(Timeout = TestTimeout)]
+        public async Task closedChannel_DynamicCall_failsWithConnectionClosed()
+        {
+            // GIVEN: A channel whose connection closed.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+            dynamic obj = channel.Objects[ObjectName];
+            channel.ConnectionClosed();
+
+            // WHEN: The method MethodName is called through dynamic.
+            Task call = obj.readLog();
+
+            // THEN: The call fails with the close.
+            await Assert.ThrowsAsync<ConnectionClosedException>(
+                () => call.WaitAsync(TestContext.Current.CancellationToken));
+        }
+
+        /**
          * @scenario A method is called after the connection closed
          * @given A channel whose connection closed
          * @when  A method is called
