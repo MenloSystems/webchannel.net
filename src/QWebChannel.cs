@@ -470,6 +470,16 @@ namespace QWebChannel
                 webChannel.RemovePendingCall(tcs);
                 success = true;
                 tcs.TrySetException(e);
+            } catch {
+                // Nothing was sent, so no answer can arrive
+                webChannel.RemovePendingCall(tcs);
+                throw;
+            }
+            if (!success) {
+                // An unknown method: nothing was sent, so no answer can arrive
+                webChannel.RemovePendingCall(tcs);
+                tcs.TrySetException(new MissingMethodException(
+                    "Unknown method " + __id__ + "::" + name));
             }
             return tcs.Task;
         }

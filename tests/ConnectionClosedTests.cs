@@ -29,6 +29,9 @@ namespace WebChannelTests
         const int ChangeSignalIndex = 1;
         const string SignalName = "newMessage";
         const string MethodName = "readLog";
+        // A full signature, which the channel checks against the methods of
+        // the object
+        const string UnknownMethod = "unknownMethod()";
         // What the server answers to a call
         const string Answer = "first message";
         // The longest that an async test may take, in ms; a call that waits
@@ -180,6 +183,31 @@ namespace WebChannelTests
             // THEN: The call fails with the close.
             await Assert.ThrowsAsync<ConnectionClosedException>(
                 () => call.WaitAsync(TestContext.Current.CancellationToken));
+        }
+
+        /**
+         * @scenario A method is called that the object does not have
+         * @given A connected channel
+         * @when  A method with a full signature that the object does not
+         *        have is called, and the connection closes later
+         * @then  The call fails at once with MissingMethodException, which
+         *        the close does not replace, and nothing is sent
+         */
+        [Fact(Timeout = TestTimeout)]
+        public async Task unknownMethod_InvokeAsync_failsAtOnce()
+        {
+            // GIVEN: A connected channel.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+
+            // WHEN: The unknown method is called, and the connection closes.
+            var call = channel.Objects[ObjectName].InvokeAsync(UnknownMethod);
+            channel.ConnectionClosed();
+
+            // THEN: The call failed as unknown, and sent nothing.
+            await Assert.ThrowsAsync<MissingMethodException>(
+                () => call.WaitAsync(TestContext.Current.CancellationToken));
+            Assert.Empty(transport.SentOfType(MessageType.InvokeMethod));
         }
 
         /**
