@@ -17,36 +17,42 @@ namespace chatclient
                 // Run the processing task in the background
                 transport.ProcessMessages();
                 
-                await channel.IsConnected;
-                Console.WriteLine("Connected.");
+                // The transport reports the end of the connection to the channel,
+                // which then fails the pending and later calls
+                try {
+                    await channel.IsConnected;
+                    Console.WriteLine("Connected.");
 
-                dynamic chatserver = channel.Objects["chatserver"];
+                    dynamic chatserver = channel.Objects["chatserver"];
 
-                string username = null;
+                    string username = null;
 
-                Func<Task<bool>> tryLogin = async () => {
-                    Console.Write("Enter your name: ");
-                    username = Console.ReadLine().Trim();
-                    return await chatserver.login(username);
-                };
+                    Func<Task<bool>> tryLogin = async () => {
+                        Console.Write("Enter your name: ");
+                        username = Console.ReadLine().Trim();
+                        return await chatserver.login(username);
+                    };
 
-                while (!await tryLogin()) {
-                    Console.Error.WriteLine("Username already taken. Please enter a new one.");
-                }
-                Console.WriteLine("Successfully logged in as {0}!", username);
+                    while (!await tryLogin()) {
+                        Console.Error.WriteLine("Username already taken. Please enter a new one.");
+                    }
+                    Console.WriteLine("Successfully logged in as {0}!", username);
 
-                ((Signal) chatserver.keepAlive).Connect(() => chatserver.keepAliveResponse(username));
-                ((Signal) chatserver.newMessage).Connect(delegate (string time, string user, string message) {
-                    Console.WriteLine("[{0}] {1}: {2}", time, user, message);
-                });
+                    ((Signal) chatserver.keepAlive).Connect(() => chatserver.keepAliveResponse(username));
+                    ((Signal) chatserver.newMessage).Connect(delegate (string time, string user, string message) {
+                        Console.WriteLine("[{0}] {1}: {2}", time, user, message);
+                    });
 
-                ((Signal) chatserver.userListChanged).OnEmission += (sender, args) => {
-                    Console.WriteLine("User list: {0}", string.Join(", ", chatserver.userList)); 
-                };
+                    ((Signal) chatserver.userListChanged).OnEmission += (sender, args) => {
+                        Console.WriteLine("User list: {0}", string.Join(", ", chatserver.userList)); 
+                    };
 
-                while (true) {
-                    var msg = await Console.In.ReadLineAsync();
-                    await chatserver.sendMessage(username, msg);
+                    while (true) {
+                        var msg = await Console.In.ReadLineAsync();
+                        await chatserver.sendMessage(username, msg);
+                    }
+                } catch (ConnectionClosedException) {
+                    Console.WriteLine("The server closed the connection.");
                 }
             }
         }
