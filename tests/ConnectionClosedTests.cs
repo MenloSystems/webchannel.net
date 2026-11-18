@@ -268,6 +268,30 @@ namespace WebChannelTests
         }
 
         /**
+         * @scenario The transport reports the end of its connection
+         * @given A connected channel on a transport that reports its end,
+         *        and a method call without an answer
+         * @when  The connection of the transport ends
+         * @then  The call fails with ConnectionClosedException, without a
+         *        call of ConnectionClosed() by the owner
+         */
+        [Fact(Timeout = TestTimeout)]
+        public async Task pendingCall_TransportDisconnects_failsTheCall()
+        {
+            // GIVEN: A connected channel, and a call that waits.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+            var call = channel.Objects[ObjectName].InvokeAsync(MethodName);
+
+            // WHEN: The connection of the transport ends.
+            transport.Disconnect();
+
+            // THEN: The call fails.
+            await Assert.ThrowsAsync<ConnectionClosedException>(
+                () => call.WaitAsync(TestContext.Current.CancellationToken));
+        }
+
+        /**
          * @scenario A method is called after the connection closed
          * @given A channel whose connection closed
          * @when  A method is called

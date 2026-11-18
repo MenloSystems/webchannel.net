@@ -21,6 +21,17 @@ namespace QWebChannel
         event Action<object, byte[]> OnMessage;
     }
 
+    /// <summary>
+    /// A transport that reports the end of its connection
+    /// </summary>
+    /// A QWebChannel on such a transport calls ConnectionClosed() by itself
+    /// when the transport raises OnDisconnected. A transport without it
+    /// leaves that to the owner of the channel.
+    public interface IWebChannelClosingTransport : IWebChannelTransport
+    {
+        event EventHandler OnDisconnected;
+    }
+
     public class DummyTransport : IWebChannelTransport
     {
         public void Send(byte[] msg)
@@ -34,7 +45,7 @@ namespace QWebChannel
         #pragma warning restore 67
     }
 
-    public class WebChannelTcpSocketTransport : IWebChannelTransport, IDisposable
+    public class WebChannelTcpSocketTransport : IWebChannelClosingTransport, IDisposable
     {
         TcpClient sock;
         Semaphore writeLock = new Semaphore(1, 1);
@@ -206,7 +217,7 @@ namespace QWebChannel
         }
     }
 
-    public class WebChannelWebSocketTransport : IWebChannelTransport, IDisposable
+    public class WebChannelWebSocketTransport : IWebChannelClosingTransport, IDisposable
     {
         ClientWebSocket sock;
         Queue<byte[]> sendQueue = new Queue<byte[]>();

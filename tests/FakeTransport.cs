@@ -36,11 +36,18 @@ namespace WebChannelTests
     /// A transport in the process: it keeps what the channel sends, and
     /// hands the channel what a test lets the server answer
     /// </summary>
-    sealed class FakeTransport : IWebChannelTransport
+    sealed class FakeTransport : IWebChannelClosingTransport
     {
         readonly List<JObject> sent = new List<JObject>();
 
         public event Action<object, byte[]> OnMessage;
+        public event EventHandler OnDisconnected;
+
+        /// <summary>Ends the connection, as the server does</summary>
+        public void Disconnect()
+        {
+            OnDisconnected?.Invoke(this, EventArgs.Empty);
+        }
 
         public void Send(byte[] msg)
         {

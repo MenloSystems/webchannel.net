@@ -71,6 +71,10 @@ namespace QWebChannel
 
             this.transport = transport;
             this.transport.OnMessage += this.OnMessage;
+            var closing = transport as IWebChannelClosingTransport;
+            if (closing != null) {
+                closing.OnDisconnected += (sender, args) => ConnectionClosed();
+            }
 
             if (initCallback != null) {
                 OnConnected += (sender, args) => initCallback(this);
@@ -82,6 +86,9 @@ namespace QWebChannel
         /// <summary>
         /// Tells the channel that the connection of its transport closed
         /// </summary>
+        /// A transport that implements IWebChannelClosingTransport, as the
+        /// transports of this library do, calls it by itself; with another
+        /// transport, its owner calls it.
         /// The answers to pending calls cannot arrive any more, so the calls
         /// of InvokeAsync() fail with ConnectionClosedException, and so does
         /// IsConnected before the init. Afterwards calls, property writes and
