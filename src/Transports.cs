@@ -105,9 +105,11 @@ namespace QWebChannel
                 return;
             }
 
-            sock.GetStream().BeginRead(receiveBuffer, 0, receiveBuffer.Length, new AsyncCallback(DataAvailable), null);
-
+            // Before the read: its end can come on another thread at once,
+            // and only reports the disconnect of a connected transport
             connected = true;
+
+            sock.GetStream().BeginRead(receiveBuffer, 0, receiveBuffer.Length, new AsyncCallback(DataAvailable), null);
 
             if (callback != null) {
                 callback(this);
