@@ -21,6 +21,8 @@ namespace WebChannelTests
         const int TestTimeout = 5000;
         // How long the server waits for the answer to its close
         static readonly TimeSpan AnswerTimeout = TimeSpan.FromSeconds(2);
+        // How long the test waits for the transport to report its end
+        static readonly TimeSpan ReportTimeout = TimeSpan.FromSeconds(2);
         // Enough for a close frame
         const int ReceiveBufferSize = 1024;
 
@@ -91,6 +93,35 @@ namespace WebChannelTests
                 new ArraySegment<byte>(new byte[ReceiveBufferSize]),
                 cancelled).WaitAsync(AnswerTimeout, cancelled);
             Assert.Equal(WebSocketMessageType.Close, answer.MessageType);
+        }
+
+        /**
+         * @scenario The WebSocket of the client is aborted while it receives
+         * @given A transport that receives the messages of a server
+         * @when  The WebSocket of the transport is aborted
+         * @then  The transport reports the end of its connection
+         */
+        [Fact(Timeout = TestTimeout)]
+        public async Task abortedSocket_WebSocketTransport_reportsDisconnect()
+        {
+            // GIVEN: A transport that receives from a server.
+            using var server = new WebSocketServer();
+            using var transport = new WebChannelWebSocketTransport();
+            var disconnected = new TaskCompletionSource(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            transport.OnDisconnected += (sender, args) =>
+                disconnected.TrySetResult();
+            var accepting = server.Accept();
+            await transport.Connect(server.Url);
+            await accepting;
+            transport.ProcessMessages();
+
+            // WHEN: The WebSocket of the transport is aborted.
+            transport.ClientWebSocket.Abort();
+
+            // THEN: The transport reports the end.
+            await disconnected.Task.WaitAsync(ReportTimeout,
+                TestContext.Current.CancellationToken);
         }
     }
 }

@@ -300,8 +300,14 @@ namespace QWebChannel
             }
 
             processMessagesTask = Task.Run(async () => {
-                while (Connected) {
-                    await ProcessNextMessageAsync();
+                try {
+                    while (Connected) {
+                        await ProcessNextMessageAsync();
+                    }
+                } finally {
+                    // Also if the socket was aborted, before or during a
+                    // receive
+                    ReportDisconnected();
                 }
             }).ContinueWith(t => Console.Error.WriteLine(t.Exception),
                             TaskContinuationOptions.OnlyOnFaulted);
@@ -334,9 +340,18 @@ namespace QWebChannel
                         // Don't handle exceptions when we wanted to close anyway
                     }
                 }
-                if (OnDisconnected != null) {
-                    OnDisconnected(this, new EventArgs());
-                }
+                ReportDisconnected();
+            }
+        }
+
+        int disconnectReported = 0;
+
+        // Raises OnDisconnected once, however the connection ended
+        void ReportDisconnected()
+        {
+            if (Interlocked.Exchange(ref disconnectReported, 1) == 0
+                    && OnDisconnected != null) {
+                OnDisconnected(this, new EventArgs());
             }
         }
 
