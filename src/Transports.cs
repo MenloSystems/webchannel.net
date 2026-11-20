@@ -21,6 +21,17 @@ namespace QWebChannel
         event Action<object, byte[]> OnMessage;
     }
 
+    /// <summary>
+    /// A transport that reports the end of its connection
+    /// </summary>
+    /// A QWebChannel on such a transport calls ConnectionClosed() by itself
+    /// when the transport raises OnDisconnected. A transport without it
+    /// leaves that to the owner of the channel.
+    public interface IWebChannelClosingTransport : IWebChannelTransport
+    {
+        event EventHandler OnDisconnected;
+    }
+
     public class DummyTransport : IWebChannelTransport
     {
         public void Send(byte[] msg)
@@ -34,7 +45,7 @@ namespace QWebChannel
         #pragma warning restore 67
     }
 
-    public class WebChannelTcpSocketTransport : IWebChannelTransport, IDisposable
+    public class WebChannelTcpSocketTransport : IWebChannelClosingTransport, IDisposable
     {
         TcpClient sock;
         Semaphore writeLock = new Semaphore(1, 1);
@@ -94,9 +105,11 @@ namespace QWebChannel
                 return;
             }
 
-            sock.GetStream().BeginRead(receiveBuffer, 0, receiveBuffer.Length, new AsyncCallback(DataAvailable), null);
-
+            // Before the read: its end can come on another thread at once,
+            // and only reports the disconnect of a connected transport
             connected = true;
+
+            sock.GetStream().BeginRead(receiveBuffer, 0, receiveBuffer.Length, new AsyncCallback(DataAvailable), null);
 
             if (callback != null) {
                 callback(this);
@@ -168,13 +181,7 @@ namespace QWebChannel
             }
 
             if (nowDisconnected) {
-                if (connected) {
-                    connected = false;
-                    if (OnDisconnected != null) {
-                        OnDisconnected(this, new EventArgs());
-                    }
-                }
-
+                ReportDisconnected();
                 return;
             }
 
@@ -182,9 +189,31 @@ namespace QWebChannel
             Array.Resize(ref buffer, buffer.Length + bytesRead);
             Buffer.BlockCopy(receiveBuffer, 0, buffer, oldSize, bytesRead);
 
-            TryReadMessages();
+            try {
+                TryReadMessages();
+            } catch (Exception e) {
+                // A handler of a message threw, e.g. a signal callback: the
+                // connection ends, instead of the process with an exception
+                // on this thread
+                if (OnError != null) {
+                    OnError(this, new UnhandledExceptionEventArgs(e, false));
+                }
+                Disconnect();
+                ReportDisconnected();
+                return;
+            }
 
             stream.BeginRead(receiveBuffer, 0, receiveBuffer.Length, new AsyncCallback(DataAvailable), null);
+        }
+
+        void ReportDisconnected()
+        {
+            if (connected) {
+                connected = false;
+                if (OnDisconnected != null) {
+                    OnDisconnected(this, new EventArgs());
+                }
+            }
         }
 
         void TryReadMessages()
@@ -206,7 +235,7 @@ namespace QWebChannel
         }
     }
 
-    public class WebChannelWebSocketTransport : IWebChannelTransport, IDisposable
+    public class WebChannelWebSocketTransport : IWebChannelClosingTransport, IDisposable
     {
         ClientWebSocket sock;
         Queue<byte[]> sendQueue = new Queue<byte[]>();
@@ -275,7 +304,19 @@ namespace QWebChannel
 
         async Task ProcessNextMessageAsync()
         {
-            ProcessMessage(await ReceiveMessage());
+            var msg = await ReceiveMessage();
+            try {
+                ProcessMessage(msg);
+            } catch (Exception e) {
+                // A handler of a message threw, e.g. a signal callback: the
+                // connection ends. The end is reported before the close
+                // handshake, which waits for the server.
+                if (OnError != null) {
+                    OnError(this, new UnhandledExceptionEventArgs(e, false));
+                }
+                ReportDisconnected();
+                await Disconnect("A message handler failed");
+            }
         }
 
         Task processMessagesTask;
@@ -287,8 +328,14 @@ namespace QWebChannel
             }
 
             processMessagesTask = Task.Run(async () => {
-                while (Connected) {
-                    await ProcessNextMessageAsync();
+                try {
+                    while (Connected) {
+                        await ProcessNextMessageAsync();
+                    }
+                } finally {
+                    // Also if the socket was aborted, before or during a
+                    // receive
+                    ReportDisconnected();
                 }
             }).ContinueWith(t => Console.Error.WriteLine(t.Exception),
                             TaskContinuationOptions.OnlyOnFaulted);
@@ -311,16 +358,28 @@ namespace QWebChannel
         async Task Disconnect(string reason)
         {
             if (sock != null) {
-                if (sock.State == WebSocketState.Open || sock.State == WebSocketState.Connecting) {
+                // CloseReceived: the server closed, and waits for the answer
+                // that completes the close handshake
+                if (sock.State == WebSocketState.Open || sock.State == WebSocketState.Connecting
+                        || sock.State == WebSocketState.CloseReceived) {
                     try {
                         await sock.CloseAsync(WebSocketCloseStatus.NormalClosure, reason, CancellationToken.None);
                     } catch (WebSocketException) {
                         // Don't handle exceptions when we wanted to close anyway
                     }
                 }
-                if (OnDisconnected != null) {
-                    OnDisconnected(this, new EventArgs());
-                }
+                ReportDisconnected();
+            }
+        }
+
+        int disconnectReported = 0;
+
+        // Raises OnDisconnected once, however the connection ended
+        void ReportDisconnected()
+        {
+            if (Interlocked.Exchange(ref disconnectReported, 1) == 0
+                    && OnDisconnected != null) {
+                OnDisconnected(this, new EventArgs());
             }
         }
 
