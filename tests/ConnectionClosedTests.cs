@@ -328,6 +328,62 @@ namespace WebChannelTests
         }
 
         /**
+         * @scenario The connection closes while a call is sent
+         * @given A connected channel whose transport finds the connection
+         *        ended on the next send
+         * @when  A method is called
+         * @then  The call returns its task, which fails with
+         *        ConnectionClosedException instead of the error of the
+         *        transport
+         */
+        [Fact(Timeout = TestTimeout)]
+        public async Task closeWhileSending_InvokeAsync_failsTheCall()
+        {
+            // GIVEN: A transport that finds the end on the next send.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+            transport.CloseOnNextSend = true;
+
+            // WHEN: A method is called.
+            Task<object> call = null;
+            var invoke = Record.Exception(() => {
+                call = channel.Objects[ObjectName].InvokeAsync(MethodName);
+            });
+
+            // THEN: No error at the call, and its task fails with the close.
+            Assert.Null(invoke);
+            await Assert.ThrowsAsync<ConnectionClosedException>(
+                () => call.WaitAsync(TestContext.Current.CancellationToken));
+        }
+
+        /**
+         * @scenario The connection closes while a property write is sent
+         * @given A connected channel whose transport finds the connection
+         *        ended on the next send
+         * @when  A property is written
+         * @then  The write throws ConnectionClosedException instead of the
+         *        error of the transport, and the property keeps its value
+         */
+        [Fact]
+        public void closeWhileSending_SetMember_throwsConnectionClosed()
+        {
+            // GIVEN: A transport that finds the end on the next send.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+            var obj = channel.Objects[ObjectName];
+            transport.CloseOnNextSend = true;
+
+            // WHEN: The property is written.
+            var write = Record.Exception(
+                () => obj.SetMember(PropertyName, NewCount));
+
+            // THEN: It failed with the close, and the property kept its
+            // value.
+            Assert.IsType<ConnectionClosedException>(write);
+            Assert.Equal(Count, Convert.ToInt32(obj.GetMember(PropertyName)));
+        }
+
+        /**
          * @scenario The transport reports the end of its connection
          * @given A connected channel on a transport that reports its end,
          *        and a method call without an answer

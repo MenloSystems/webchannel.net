@@ -222,7 +222,7 @@ namespace QWebChannel
 
             if (callback == null) {
                 // if no callback is given, send directly
-                Send(data);
+                SendRequest(data);
                 return;
             }
 
@@ -239,13 +239,25 @@ namespace QWebChannel
                 execCallbacks[(int) data["id"]] = callback;
             }
             try {
-                Send(data);
+                SendRequest(data);
             } catch {
                 // No answer can arrive for a request that was not sent
                 lock (lockObject) {
                     execCallbacks.Remove((int) data["id"]);
                 }
                 throw;
+            }
+        }
+
+        // Sends a request; if the connection closed meanwhile, the error of
+        // the transport comes from the close, so the caller gets the same
+        // ConnectionClosedException as for a request after the close
+        void SendRequest(JObject data)
+        {
+            try {
+                Send(data);
+            } catch (Exception) when (closed) {
+                throw new ConnectionClosedException();
             }
         }
 

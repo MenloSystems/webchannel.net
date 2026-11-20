@@ -38,6 +38,11 @@ namespace WebChannelTests
         public void Send(byte[] msg)
         {
             var message = JObject.Parse(Encoding.UTF8.GetString(msg));
+            if (CloseOnNextSend) {
+                CloseOnNextSend = false;
+                Disconnect();
+                throw new IOException("The connection closed");
+            }
             if (FailNextSend) {
                 FailNextSend = false;
                 FailedMessage = message;
@@ -51,6 +56,13 @@ namespace WebChannelTests
         /// does
         /// </summary>
         public bool FailNextSend { get; set; }
+
+        /// <summary>
+        /// Whether the next send finds the connection ended: it reports the
+        /// end first and then throws IOException, as a transport does that
+        /// notices the end while sending
+        /// </summary>
+        public bool CloseOnNextSend { get; set; }
 
         /// <summary>The message whose send failed</summary>
         public JObject FailedMessage { get; private set; }
