@@ -12,6 +12,8 @@ using Xunit;
 using Channel = QWebChannel.QWebChannel;
 using MessageType = QWebChannel.QWebChannelMessageTypes;
 
+using static WebChannelTests.TestObjects;
+
 namespace WebChannelTests
 {
     /// <summary>
@@ -27,8 +29,6 @@ namespace WebChannelTests
         // No request got this id: the channel numbers its requests from
         // 0, and has only sent its init
         const int UnknownId = 1;
-        // What the server answers to a call
-        const string Answer = "first message";
         // The start of the line that the channel writes for the response
         const string UnhandledResponse = "Unhandled response";
 

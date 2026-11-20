@@ -17,57 +17,16 @@ using QWebChannel;
 using Channel = QWebChannel.QWebChannel;
 using MessageType = QWebChannel.QWebChannelMessageTypes;
 
+using static WebChannelTests.TestObjects;
+
 namespace WebChannelTests
 {
     public class ConnectionClosedTests
     {
-        // Fixture: one object of the server with a property, a signal and
-        // a method
-        const string ObjectName = "log";
-        const string PropertyName = "count";
-        const int Count = 6;
         const int NewCount = 7;
-        const string SignalName = "newMessage";
-        const string MethodName = "readLog";
-        // The indexes of the members, as the meta object of Qt numbers
-        // them: signals and methods share one list, the properties have
-        // their own
-        const int DestroyedIndex = 0;
-        const int ChangeSignalIndex = 1;
-        const int SignalIndex = 2;
-        const int MethodIndex = 3;
-        const int PropertyIndex = 0;
-        // Says that the change signal of the property has the usual name,
-        // the name of the property with "Changed"
-        const int UsualChangeSignalName = 1;
         // A full signature, which the channel checks against the methods of
         // the object
         const string UnknownMethod = "unknownMethod()";
-        // What the server answers to a call
-        const string Answer = "first message";
-        // The longest that an async test may take, in ms; a call that waits
-        // forever fails the test instead of hanging
-        const int TestTimeout = 5000;
-
-        // The description of the object, as the server sends it at the init
-        static JObject Objects() => new JObject {
-            [ObjectName] = new JObject {
-                ["methods"] = new JArray {
-                    new JArray(MethodName, MethodIndex),
-                },
-                ["properties"] = new JArray {
-                    new JArray(PropertyIndex, PropertyName,
-                               new JArray(UsualChangeSignalName,
-                                          ChangeSignalIndex),
-                               Count),
-                },
-                ["signals"] = new JArray {
-                    new JArray("destroyed", DestroyedIndex),
-                    new JArray(SignalName, SignalIndex),
-                },
-                ["enums"] = new JObject(),
-            },
-        };
 
         // An object that the server sends only in a signal, as the
         // description that a new QObject comes with
@@ -82,14 +41,6 @@ namespace WebChannelTests
         };
 
         static void OnSignal(object[] args) { }
-
-        // A channel on transport whose init the server answered
-        static Channel Connected(FakeTransport transport)
-        {
-            var channel = new Channel(transport);
-            transport.AnswerInit(Objects());
-            return channel;
-        }
 
         /**
          * @scenario The connection closes while a call waits for its answer
