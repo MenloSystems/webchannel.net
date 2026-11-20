@@ -69,6 +69,18 @@ namespace WebChannelTests
             },
         };
 
+        // An object that the server sends only in a signal, as the
+        // description that a new QObject comes with
+        const string NewObjectName = "entry";
+        static JObject NewObject() => new JObject {
+            ["methods"] = new JArray(),
+            ["properties"] = new JArray(),
+            ["signals"] = new JArray {
+                new JArray("destroyed", DestroyedIndex),
+            },
+            ["enums"] = new JObject(),
+        };
+
         static void OnSignal(object[] args) { }
 
         // A channel on transport whose init the server answered
@@ -171,6 +183,43 @@ namespace WebChannelTests
             // THEN: No error, and no further idle.
             Assert.Null(receive);
             Assert.Equal(idles, transport.SentOfType(MessageType.Idle).Count());
+        }
+
+        /**
+         * @scenario A signal with an object that the channel does not know
+         *           yet arrives after the connection closed, e.g. from the
+         *           buffer of the transport
+         * @given A channel whose connection closed
+         * @when  The signal arrives with the new object as its argument
+         * @then  The channel ignores it without an error, and does not
+         *        register the object
+         */
+        [Fact]
+        public void lateSignalWithNewObject_AfterConnectionClosed_isIgnored()
+        {
+            // GIVEN: A channel whose connection closed.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+            channel.ConnectionClosed();
+
+            // WHEN: The signal with a new object arrives.
+            var receive = Record.Exception(() => transport.Receive(
+                new JObject {
+                    ["type"] = (int) MessageType.Signal,
+                    ["object"] = ObjectName,
+                    ["signal"] = SignalIndex,
+                    ["args"] = new JArray {
+                        new JObject {
+                            ["__QObject*__"] = true,
+                            ["id"] = NewObjectName,
+                            ["data"] = NewObject(),
+                        },
+                    },
+                }));
+
+            // THEN: No error, and no new object.
+            Assert.Null(receive);
+            Assert.False(channel.Objects.ContainsKey(NewObjectName));
         }
 
         /**

@@ -178,6 +178,12 @@ namespace QWebChannel
             JObject data = JsonConvert.DeserializeObject<JObject>(Encoding.UTF8.GetString(msg));
 
             lock (lockObject) {
+                // After the close, e.g. from the buffer of the transport:
+                // nobody waits for an answer, and a signal or an update
+                // would reach callbacks on a closed channel
+                if (closed) {
+                    return;
+                }
                 switch ((QWebChannelMessageTypes) (int) data["type"])
                 {
                     case QWebChannelMessageTypes.Signal:
@@ -281,11 +287,7 @@ namespace QWebChannel
                 }
             }
 
-            // After the close nobody can receive it, e.g. for an update from
-            // the buffer of the transport
-            if (!closed) {
-                exec(new { type = (int) QWebChannelMessageTypes.Idle } );
-            }
+            exec(new { type = (int) QWebChannelMessageTypes.Idle } );
         }
 
         void Debug(object message) {
