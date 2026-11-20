@@ -486,10 +486,12 @@ namespace QWebChannel
             var tcs = new TaskCompletionSource<object>(
                 TaskCreationOptions.RunContinuationsAsynchronously);
             // After the close the call fails through its task, while success
-            // still means that the method exists, as for dynamic calls
+            // still means that the method exists, as with an open connection
             if (!webChannel.AddPendingCall(tcs)) {
-                success = true;
-                tcs.SetException(new ConnectionClosedException());
+                success = HasMethod(name);
+                tcs.SetException(success
+                    ? (Exception) new ConnectionClosedException()
+                    : UnknownMethod(name));
                 return tcs.Task;
             }
             Action<object> callback = (result) => {
@@ -517,10 +519,22 @@ namespace QWebChannel
             if (!success) {
                 // An unknown method: nothing was sent, so no answer can arrive
                 webChannel.RemovePendingCall(tcs);
-                tcs.TrySetException(new MissingMethodException(
-                    "Unknown method " + __id__ + "::" + name));
+                tcs.TrySetException(UnknownMethod(name));
             }
             return tcs.Task;
+        }
+
+        // Whether the object has the method; a name without a signature
+        // counts, as the server resolves it
+        bool HasMethod(string name)
+        {
+            return !name.EndsWith(")") || methods.ContainsKey(name);
+        }
+
+        MissingMethodException UnknownMethod(string name)
+        {
+            return new MissingMethodException(
+                "Unknown method " + __id__ + "::" + name);
         }
 
         public Task<object> InvokeAsync(string name, params object[] arguments)

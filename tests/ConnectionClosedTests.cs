@@ -224,6 +224,34 @@ namespace WebChannelTests
         }
 
         /**
+         * @scenario A method is called after the connection closed, which
+         *           the object does not have
+         * @given A channel whose connection closed
+         * @when  A method with a full signature that the object does not
+         *        have is called
+         * @then  The call reports the method as unknown and fails with
+         *        MissingMethodException, as with an open connection
+         */
+        [Fact(Timeout = TestTimeout)]
+        public async Task closedChannel_InvokeUnknownMethod_failsAsUnknown()
+        {
+            // GIVEN: A channel whose connection closed.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+            channel.ConnectionClosed();
+
+            // WHEN: The unknown method is called.
+            bool success;
+            var call = channel.Objects[ObjectName]
+                .InvokeAsync(UnknownMethod, out success);
+
+            // THEN: It is unknown, and the call failed as unknown.
+            Assert.False(success);
+            await Assert.ThrowsAsync<MissingMethodException>(
+                () => call.WaitAsync(TestContext.Current.CancellationToken));
+        }
+
+        /**
          * @scenario Sending a call fails, but an answer arrives anyway
          * @given A call with a callback whose send failed
          * @when  An answer to the id of the call arrives
