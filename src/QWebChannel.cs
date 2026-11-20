@@ -280,7 +280,9 @@ namespace QWebChannel
 
             Delegate callback;
             if (!execCallbacks.TryGetValue((int) message["id"], out callback)) {
-                // e.g. the answer to a call that ConnectionClosed() failed
+                // An answer to no request of this channel, e.g. by a bug of
+                // the server
+                Console.Error.WriteLine("Unhandled response: " + message);
                 return;
             }
             callback.DynamicInvoke(message["data"]);
