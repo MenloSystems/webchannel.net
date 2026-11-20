@@ -50,7 +50,11 @@ namespace QWebChannel
     public class QWebChannel
     {
         IWebChannelTransport transport;
-        TaskCompletionSource<bool> connected = new TaskCompletionSource<bool>();
+        // Its tasks, as those of the calls, continue on another thread: the
+        // thread that receives holds the lock of the channel, and code that
+        // waits there for another answer would block its own receive
+        TaskCompletionSource<bool> connected = new TaskCompletionSource<bool>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
         internal IDictionary<string, QObject> objects = new Dictionary<string, QObject>();
         public ReadOnlyDictionary<string, QObject> Objects { get; }
         internal object lockObject = new object();
@@ -479,7 +483,8 @@ namespace QWebChannel
 
         public Task<object> InvokeAsync(string name, out bool success, params object[] arguments)
         {
-            var tcs = new TaskCompletionSource<object>();
+            var tcs = new TaskCompletionSource<object>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
             // After the close the call fails through its task, while success
             // still means that the method exists, as for dynamic calls
             if (!webChannel.AddPendingCall(tcs)) {
