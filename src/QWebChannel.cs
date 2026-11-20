@@ -858,7 +858,11 @@ namespace QWebChannel
                     msg["object"] = qObject.__id__;
                     msg["signal"] = signalIndex;
 
-                    qObject.webChannel.exec(msg);
+                    try {
+                        qObject.webChannel.exec(msg);
+                    } catch (ConnectionClosedException) {
+                        // The close came after the check above
+                    }
                 }
             }
         }

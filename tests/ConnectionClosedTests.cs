@@ -562,5 +562,34 @@ namespace WebChannelTests
             Assert.Empty(transport.SentOfType(
                 MessageType.DisconnectFromSignal));
         }
+
+        /**
+         * @scenario The connection closes while a signal is disconnected
+         * @given A callback connected to a signal of the server, and a
+         *        transport that finds the connection ended on the next send
+         * @when  The callback is disconnected
+         * @then  The disconnect does not throw, so that cleanup code works
+         *        also if the close comes during the disconnect
+         */
+        [Fact]
+        public void closeWhileSending_SignalDisconnect_doesNotThrow()
+        {
+            // GIVEN: A connected callback, and a transport that finds the
+            // end on the next send.
+            var transport = new FakeTransport();
+            var channel = Connected(transport);
+            var signal = (Signal) channel.Objects[ObjectName]
+                .GetMember(SignalName);
+            Action<object[]> callback = OnSignal;
+            signal.Connect(callback);
+            transport.CloseOnNextSend = true;
+
+            // WHEN: The callback is disconnected.
+            var disconnect = Record.Exception(
+                () => signal.Disconnect(callback));
+
+            // THEN: No error.
+            Assert.Null(disconnect);
+        }
     }
 }
