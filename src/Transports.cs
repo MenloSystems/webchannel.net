@@ -181,13 +181,7 @@ namespace QWebChannel
             }
 
             if (nowDisconnected) {
-                if (connected) {
-                    connected = false;
-                    if (OnDisconnected != null) {
-                        OnDisconnected(this, new EventArgs());
-                    }
-                }
-
+                ReportDisconnected();
                 return;
             }
 
@@ -195,9 +189,31 @@ namespace QWebChannel
             Array.Resize(ref buffer, buffer.Length + bytesRead);
             Buffer.BlockCopy(receiveBuffer, 0, buffer, oldSize, bytesRead);
 
-            TryReadMessages();
+            try {
+                TryReadMessages();
+            } catch (Exception e) {
+                // A handler of a message threw, e.g. a signal callback: the
+                // connection ends, instead of the process with an exception
+                // on this thread
+                if (OnError != null) {
+                    OnError(this, new UnhandledExceptionEventArgs(e, false));
+                }
+                Disconnect();
+                ReportDisconnected();
+                return;
+            }
 
             stream.BeginRead(receiveBuffer, 0, receiveBuffer.Length, new AsyncCallback(DataAvailable), null);
+        }
+
+        void ReportDisconnected()
+        {
+            if (connected) {
+                connected = false;
+                if (OnDisconnected != null) {
+                    OnDisconnected(this, new EventArgs());
+                }
+            }
         }
 
         void TryReadMessages()
@@ -288,7 +304,19 @@ namespace QWebChannel
 
         async Task ProcessNextMessageAsync()
         {
-            ProcessMessage(await ReceiveMessage());
+            var msg = await ReceiveMessage();
+            try {
+                ProcessMessage(msg);
+            } catch (Exception e) {
+                // A handler of a message threw, e.g. a signal callback: the
+                // connection ends. The end is reported before the close
+                // handshake, which waits for the server.
+                if (OnError != null) {
+                    OnError(this, new UnhandledExceptionEventArgs(e, false));
+                }
+                ReportDisconnected();
+                await Disconnect("A message handler failed");
+            }
         }
 
         Task processMessagesTask;

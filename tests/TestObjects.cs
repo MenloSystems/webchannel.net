@@ -3,6 +3,8 @@
  * Copyright (C) 2026, Menlo Systems GmbH
  */
 
+using System;
+
 using Newtonsoft.Json.Linq;
 
 using Channel = QWebChannel.QWebChannel;
@@ -36,6 +38,11 @@ namespace WebChannelTests
         // The longest that an async test may take, in ms; a call that waits
         // forever fails the test instead of hanging
         internal const int TestTimeout = 5000;
+        // The text of the exception of a message handler that throws
+        internal const string HandlerFailed = "The message handler failed";
+        // How long a test waits for a transport to report an event
+        internal static readonly TimeSpan ReportTimeout =
+            TimeSpan.FromSeconds(2);
 
         // The description of the object, as the server sends it at the init
         internal static JObject Objects() => new JObject {
