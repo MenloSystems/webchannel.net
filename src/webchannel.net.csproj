@@ -8,4 +8,9 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
+  <!-- The tests use internal types, e.g. QWebChannelMessageTypes -->
+  <ItemGroup>
+    <InternalsVisibleTo Include="webchannel.net.Tests" />
+  </ItemGroup>
+
 </Project>
